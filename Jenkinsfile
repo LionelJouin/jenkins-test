@@ -1,20 +1,35 @@
+import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
+
+pending = 'PENDING'
+success = 'SUCCESS'
+failure = 'FAILURE'
+base_image = 'base-image'
+in_progress = 'In Progress.'
+completed = 'Completed.'
+failed = 'Failed'
+
 node {
     image_names = params.IMAGE_NAMES.split(' ')
     version = params.IMAGE_VERSION
-    stage ('Debug') {
-        sh 'printenv'
+    e2e_enabled = params.E2E_ENABLED
+    git_project = params.GIT_PROJECT
+    current_branch = params.CURRENT_BRANCH
+    build_steps = params.BUILD_STEPS
+
+    stage ('Clone') {
+        git branch: current_branch, url: git_project
     }
     stage ('Verify') {
         Verify().call()
     }
     stage ('Base Image') {
-        BaseImage(version).call()
+        BaseImage(version, build_steps).call()
     }
     stage ('Images') {
-        Images(image_names, version).call()
+        Images(image_names, version, build_steps).call()
     }
     stage ('E2E') {
-        e2e().call()
+        e2e(e2e_enabled).call()
     }
 }
 
@@ -35,301 +50,120 @@ def Verify() {
 }
 
 def UnitTests() {
+    context = 'Unit Tests'
     return {
         stage('Unit Tests') {
-            echo 'make test'
+            try {
+                setBuildStatus(in_progress, context, pending)
+                echo 'make test' // todo
+                setBuildStatus(completed, context, success)
+            } catch (Exception e) {
+                setBuildStatus(failed, context, failure)
+                error e
+            }
         }
     }
 }
 
 def Linter() {
+    context = 'Linter'
     return {
         stage('Linter') {
-            echo 'make lint'
+            try {
+                setBuildStatus(in_progress, context, pending)
+                echo 'make lint' // todo
+                setBuildStatus(completed, context, success)
+            } catch (Exception e) {
+                setBuildStatus(failed, context, failure)
+                error e
+            }
         }
     }
 }
 
 def GeneratedCode() {
+    context = 'Generated code verification'
     return {
-        stage('go generate ./...') {
-            echo 'make generate'
-        }
-        stage('Proto') {
-            echo 'make proto'
+        try {
+            setBuildStatus(in_progress, context, pending)
+            stage('go generate ./...') {
+                echo 'make generate' // todo
+            }
+            stage('Proto') {
+                echo 'make proto' // todo
+            }
+            setBuildStatus(completed, context, success)
+        } catch (Exception e) {
+            setBuildStatus(failed, context, failure)
+            error e
         }
     }
 }
 
-def BaseImage(version) {
-    sh """#!/bin/bash
-        echo "version"
-        echo "version: ${version}"
-        echo "version: ${version}"
-    """
-    sh "echo 'version: ${version}'"
-    setBuildStatus('Build complete', 'SUCCESS')
+def BaseImage(version, build_steps) {
+    context = "${base_image}: ${build_steps}"
     return {
-        echo 'Build base-image version: ${version}...'
+        try {
+            setBuildStatus(in_progress, context, pending)
+            echo "Build base-image version: ${version}..."
+            echo "make ${base_image} VERSION=${version} BUILD_STEPS=${build_steps}"
+            setBuildStatus(completed, context, success)
+        } catch (Exception e) {
+            // echo "Exception occurred: " + e
+            // sh "Handle the exception!"
+            setBuildStatus(failed, context, failure)
+            error e
+        }
     }
 }
 
-def Images(images, version) {
+def Images(images, version, build_steps) {
     return {
         def stages = [:]
         for (i in images) {
             stages[i] = {
-                build(i, version).call()
+                build(i, version, build_steps).call()
             }
         }
         parallel(stages)
     }
 }
 
-def build(images, version) {
-    sh "echo '${images}:${version}'"
+def build(image, version, build_steps) {
+    context = "${image}: ${build_steps}"
     return {
-        stage('Build/Tag/Push') {
-            echo 'make build'
+        stage("${image} (${version}): ${build_steps}") {
+            try {
+                setBuildStatus(in_progress, context, pending)
+                echo "make ${image} VERSION=${version} BUILD_STEPS=${build_steps}" // todo
+                setBuildStatus(completed, context, success)
+            } catch (Exception e) {
+                setBuildStatus(failed, context, failure)
+                error e
+            }
         }
     }
 }
 
-def e2e() {
-    return {
-        stage('E2E') {
-            echo 'make e2e'
+def e2e(e2e_enabled) {
+    if (e2e_enabled == 'true') {
+        return {
+            echo 'make e2e' // todo
+        }
+    } else {
+        return {
+            Utils.markStageSkippedForConditional('E2E')
         }
     }
 }
 
 // https://plugins.jenkins.io/github/#plugin-content-pipeline-examples
-void setBuildStatus(String message, String state) {
+void setBuildStatus(String message, String context, String state) {
     step([
       $class: 'GitHubCommitStatusSetter',
       reposSource: [$class: 'ManuallyEnteredRepositorySource', url: 'https://github.com/LionelJouin/jenkins-test'],
-      contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: 'ci/jenkins/build-status'],
+      contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: context],
       errorHandlers: [[$class: 'ChangingBuildStatusErrorHandler', result: 'UNSTABLE']],
       statusResultSource: [ $class: 'ConditionalStatusResultSource', results: [[$class: 'AnyBuildResult', message: message, state: state]] ]
   ])
 }
-
-// pipeline {
-//     agent any
-
-//     stages {
-//         stage('Verify') {
-//             steps {
-//                 script {
-//                     // Verify().call()
-//                     makeStage().call()
-//                 }
-//             }
-//         }
-//     // stage('Build/tag/push base image') {
-//     //     steps {
-//     //         echo 'build base image...'
-//     //     }
-//     // }
-//     // stage('Build/tag/push') {
-//     //     parallel {
-//     //         stage('Load-Balancer') {
-//     //             steps {
-//     //                 echo 'protoc...'
-//     //             }
-//     //         }
-//     //     }
-//     // }
-//     }
-// }
-
-// def makeStage() {
-//     return {
-//         stage('a') {
-//             echo 'Hello World'
-//         }
-//     }
-// }
-
-// def Verify() {
-//     return {
-//         stage('Verify') {
-//             parallel {
-//                 stage('Test On Windows') {
-//                     steps {
-//                         echo 'Unit tests + Cover...'
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// pipeline {
-//     agent any
-
-//     stages {
-//         stage('Verify') {
-//             steps {
-//                 // makeStage()
-//                 script {
-//                     makeStage().call()
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// def Verify() {
-//     stage('Verify') {
-//         parallel {
-//             UnitTests()
-//             Linter()
-//             GeneratedCode()
-//         }
-//     }
-// }
-
-// def makeStage = {
-//     return {
-//         stage('a') {
-//             echo 'Hello World'
-//         }
-//     }
-// }
-
-// def Verify() {
-//     return {
-//         parallel {
-//             stage('Test On Windows') {
-//                 steps {
-//                     echo 'Test On Windows...'
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// def Verify() {
-//     stages {
-//         parallel {
-//             stage('Unit Tests') {
-//                 UnitTests()
-//             }
-//             stage('Linter') {
-//                 Linter()
-//             }
-//             stage('Generated code verification') {
-//                 GeneratedCode()
-//             }
-//         }
-//     }
-// }
-
-// def UnitTests() {
-//     stage('Unit Tests') {
-//         steps {
-//             stages {
-//                 stage('Run') {
-//                     steps {
-//                         echo 'Unit tests + Cover...'
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// def Linter() {
-//     stage('Linter') {
-//         steps {
-//             stages {
-//                 stage('Run') {
-//                     steps {
-//                         echo 'Linter...'
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// def GeneratedCode() {
-//     stage('Generated code verification') {
-//         steps {
-//             stages {
-//                 stage('go generate ./...') {
-//                     steps {
-//                         echo 'make generate...'
-//                     }
-//                 }
-//                 stage('proto') {
-//                     steps {
-//                         echo 'protoc...'
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// ---------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------------------------------
-
-// pipeline {
-//     agent any
-
-//     stages {
-//         stage('Verify') {
-//             parallel {
-//                 stage('Unit Tests') {
-//                     stages {
-//                         stage('Unit Tests') {
-//                             steps {
-//                                 echo 'Unit tests + Cover...'
-//                             }
-//                         }
-//                     }
-//                 }
-//                 stage('Linter') {
-//                     steps {
-//                         echo 'Linter...'
-//                     }
-//                 }
-//                 stage('Generated code verification') {
-//                     stages {
-//                         stage('go generate ./...') {
-//                             steps {
-//                                 echo 'make generate...'
-//                             }
-//                         }
-//                         stage('proto') {
-//                             steps {
-//                                 echo 'protoc...'
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//         stage('Build/tag/push base image') {
-//             steps {
-//                 echo 'build base image...'
-//             }
-//         }
-//         stage('Build/tag/push') {
-//             parallel {
-//                 stage('Load-Balancer') {
-//                     steps {
-//                         echo 'protoc...'
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }

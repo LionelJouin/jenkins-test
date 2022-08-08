@@ -22,7 +22,7 @@
 
     project: 'meridio-pull-request'
 
-    ghprb-auth-id: '6c8995d2-4242-4633-8506-df7586724885'
+    ghprb-auth-id: '59e440bd-98a2-4c8a-9d75-b9c4a4fbad5d'
 
     jobs:
       - 'meridio-pull-request'
@@ -55,6 +55,23 @@
           name: IMAGE_VERSION
           default: 'latest'
           description: Version of the images
+      - string:
+          name: E2E_ENABLED
+          default: "false"
+          description: Is E2E Tests enabled?
+      - string:
+          name: GIT_PROJECT
+          default: "https://github.com/LionelJouin/jenkins-test.git"
+          description: Git URL of the project
+      - string:
+          name: CURRENT_BRANCH
+          default: "main"
+          description: Current Git branch
+      - string:
+          name: BUILD_STEPS
+          default: "build tag"
+          description: Steps to run during build
+
 
     scm:
       - git:
