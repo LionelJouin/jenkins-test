@@ -23,6 +23,7 @@
     project: 'meridio-pull-request'
 
     ghprb-auth-id: '59e440bd-98a2-4c8a-9d75-b9c4a4fbad5d'
+    ghprb-pull-id: ${{ghprbPullId}}
 
     jobs:
       - 'meridio-pull-request'
@@ -65,23 +66,18 @@
           description: Git URL of the project
       - string:
           name: CURRENT_BRANCH
-          default: "main"
+          default: "pr/{ghprb-pull-id}"
           description: Current Git branch
+      - string:
+          name: DEFAULT_BRANCH
+          default: "main"
+          description: default branch
       - string:
           name: BUILD_STEPS
           default: "build tag"
           description: Steps to run during build
 
-
-    scm:
-      - git:
-          url: 'https://github.com/$GITHUB_ORGANIZATION/$PROJECT.git'
-          refspec: '+refs/pull/*:refs/remotes/origin/pr/*'
-          timeout: 15
-          wipe-workspace: true
-          choosing-strategy: 'default'
-          clean_before: false
-
+    # https://opendev.org/jjb/jenkins-job-builder/src/commit/be422af6bb5edc32886a98d78340051f71244c41/jenkins_jobs/modules/triggers.py#L1235
     triggers:
       - github-pull-request:
           admin-list:
@@ -89,10 +85,10 @@
           auth-id: '{ghprb-auth-id}'
           github-hooks: true
           permit-all: true
+          no-commit-status: true
           trigger-phrase: '/reverify'
           only-trigger-phrase: false
           cron: 'H/5 * * * *'
-          # status-context: 'Nordix Jenkins Image Build: {image-name}'
 
     dsl: 
       !include-raw-escape: Jenkinsfile

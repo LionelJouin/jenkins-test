@@ -9,15 +9,29 @@ completed = 'Completed.'
 failed = 'Failed'
 
 node {
-    image_names = params.IMAGE_NAMES.split(' ')
-    version = params.IMAGE_VERSION
-    e2e_enabled = params.E2E_ENABLED
-    git_project = params.GIT_PROJECT
-    current_branch = params.CURRENT_BRANCH
-    build_steps = params.BUILD_STEPS
+    def image_names = params.IMAGE_NAMES.split(' ')
+    def version = params.IMAGE_VERSION
+    def e2e_enabled = params.E2E_ENABLED
+    def git_project = params.GIT_PROJECT
+    def current_branch = params.CURRENT_BRANCH
+    def default_branch = params.DEFAULT_BRANCH
+    def build_steps = params.BUILD_STEPS
 
-    stage ('Clone') {
-        git branch: current_branch, url: git_project
+    // stage ('Debug') {
+    //     sh 'printenv'
+    // }
+    stage ('Clone/Checkout') {
+        git branch: default_branch, url: git_project
+        checkout([
+            $class: 'GitSCM',
+            branches: [[name: current_branch]],
+            extensions: [],
+             userRemoteConfigs: [[
+                 refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*',
+                 url: git_project
+            ]]
+        ])
+        sh 'git show'
     }
     stage ('Verify') {
         Verify().call()
@@ -29,36 +43,30 @@ node {
         Images(image_names, version, build_steps).call()
     }
     stage ('E2E') {
-        e2e(e2e_enabled).call()
+        E2e(e2e_enabled).call()
     }
 }
 
 def Verify() {
     return {
         def stages = [:]
-        stages['Unit Tests'] = {
-            UnitTests().call()
-        }
-        stages['Linter'] = {
-            Linter().call()
-        }
-        stages['Generated code verification'] = {
-            GeneratedCode().call()
-        }
+        stages.put('Unit Tests', UnitTests())
+        stages.put('Linter', Linter())
+        stages.put('Generated code verification', GeneratedCode())
         parallel(stages)
     }
 }
 
 def UnitTests() {
-    context = 'Unit Tests'
     return {
+        def context = 'Unit Tests'
         stage('Unit Tests') {
             try {
-                setBuildStatus(in_progress, context, pending)
+                SetBuildStatus(in_progress, context, pending)
                 echo 'make test' // todo
-                setBuildStatus(completed, context, success)
+                SetBuildStatus(completed, context, success)
             } catch (Exception e) {
-                setBuildStatus(failed, context, failure)
+                SetBuildStatus(failed, context, failure)
                 error e
             }
         }
@@ -66,15 +74,15 @@ def UnitTests() {
 }
 
 def Linter() {
-    context = 'Linter'
     return {
+        def context = 'Linter'
         stage('Linter') {
             try {
-                setBuildStatus(in_progress, context, pending)
+                SetBuildStatus(in_progress, context, pending)
                 echo 'make lint' // todo
-                setBuildStatus(completed, context, success)
+                SetBuildStatus(completed, context, success)
             } catch (Exception e) {
-                setBuildStatus(failed, context, failure)
+                SetBuildStatus(failed, context, failure)
                 error e
             }
         }
@@ -82,38 +90,27 @@ def Linter() {
 }
 
 def GeneratedCode() {
-    context = 'Generated code verification'
     return {
+        def context = 'Generated code verification'
         try {
-            setBuildStatus(in_progress, context, pending)
+            SetBuildStatus(in_progress, context, pending)
             stage('go generate ./...') {
                 echo 'make generate' // todo
             }
             stage('Proto') {
                 echo 'make proto' // todo
             }
-            setBuildStatus(completed, context, success)
+            SetBuildStatus(completed, context, success)
         } catch (Exception e) {
-            setBuildStatus(failed, context, failure)
+            SetBuildStatus(failed, context, failure)
             error e
         }
     }
 }
 
 def BaseImage(version, build_steps) {
-    context = "${base_image}: ${build_steps}"
     return {
-        try {
-            setBuildStatus(in_progress, context, pending)
-            echo "Build base-image version: ${version}..."
-            echo "make ${base_image} VERSION=${version} BUILD_STEPS=${build_steps}"
-            setBuildStatus(completed, context, success)
-        } catch (Exception e) {
-            // echo "Exception occurred: " + e
-            // sh "Handle the exception!"
-            setBuildStatus(failed, context, failure)
-            error e
-        }
+        Build(base_image, version, build_steps).call()
     }
 }
 
@@ -121,31 +118,32 @@ def Images(images, version, build_steps) {
     return {
         def stages = [:]
         for (i in images) {
-            stages[i] = {
-                build(i, version, build_steps).call()
-            }
+            stages.put(i, Build(i, version, build_steps))
         }
         parallel(stages)
     }
 }
 
-def build(image, version, build_steps) {
-    context = "${image}: ${build_steps}"
+def Build(image, version, build_steps) {
     return {
         stage("${image} (${version}): ${build_steps}") {
+            def context = "Image: ${image}"
+            def pending_state = "${pending} - ${build_steps}"
+            def success_state = "${pending} - ${build_steps}"
+            def failure_state = "${pending} - ${build_steps}"
             try {
-                setBuildStatus(in_progress, context, pending)
-                echo "make ${image} VERSION=${version} BUILD_STEPS=${build_steps}" // todo
-                setBuildStatus(completed, context, success)
+                SetBuildStatus(in_progress, context, pending_state)
+                echo "make ${image} VERSION=${version} BUILD_STEPS='${build_steps}'" // todo
+                SetBuildStatus(completed, context, success_state)
             } catch (Exception e) {
-                setBuildStatus(failed, context, failure)
+                SetBuildStatus(failed, context, failure_state)
                 error e
             }
         }
     }
 }
 
-def e2e(e2e_enabled) {
+def E2e(e2e_enabled) {
     if (e2e_enabled == 'true') {
         return {
             echo 'make e2e' // todo
@@ -158,12 +156,18 @@ def e2e(e2e_enabled) {
 }
 
 // https://plugins.jenkins.io/github/#plugin-content-pipeline-examples
-void setBuildStatus(String message, String context, String state) {
+def SetBuildStatus(String message, String context, String state) {
     step([
-      $class: 'GitHubCommitStatusSetter',
-      reposSource: [$class: 'ManuallyEnteredRepositorySource', url: 'https://github.com/LionelJouin/jenkins-test'],
-      contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: context],
-      errorHandlers: [[$class: 'ChangingBuildStatusErrorHandler', result: 'UNSTABLE']],
-      statusResultSource: [ $class: 'ConditionalStatusResultSource', results: [[$class: 'AnyBuildResult', message: message, state: state]] ]
+        $class: 'GitHubCommitStatusSetter',
+        reposSource: [$class: 'ManuallyEnteredRepositorySource', url: 'https://github.com/LionelJouin/jenkins-test'],
+        commitShaSource: [$class: 'ManuallyEnteredShaSource', sha: getCommitSha()],
+        contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: context],
+        errorHandlers: [[$class: 'ChangingBuildStatusErrorHandler', result: 'UNSTABLE']],
+        statusResultSource: [ $class: 'ConditionalStatusResultSource', results: [[$class: 'AnyBuildResult', message: message, state: state]] ]
   ])
+}
+
+def getCommitSha() {
+    sh 'git rev-parse HEAD > .git/current-commit'
+    return readFile('.git/current-commit').trim()
 }
