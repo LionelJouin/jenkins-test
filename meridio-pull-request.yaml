@@ -74,8 +74,12 @@
           description: default branch
       - string:
           name: BUILD_STEPS
-          default: "build tag"
+          default: "build"
           description: Steps to run during build
+      - string:
+          name: IMAGE_REGISTRY
+          default: 'registry.nordix.org/cloud-native/meridio'
+          description: Meridio image regsitry
 
     # https://opendev.org/jjb/jenkins-job-builder/src/commit/be422af6bb5edc32886a98d78340051f71244c41/jenkins_jobs/modules/triggers.py#L1235
     triggers:
