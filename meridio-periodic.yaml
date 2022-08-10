@@ -18,18 +18,17 @@
 # ============LICENSE_END=========================================================
 
 - project:
-    name: 'meridio-pull-request'
+    name: 'meridio-periodic'
 
-    project: 'meridio-pull-request'
+    project: 'meridio-periodic'
 
     ghprb-auth-id: '7d3d8791-9053-4a69-a9fa-1e78b635d114'
-    ghprb-pull-id: ${{ghprbPullId}}
 
     jobs:
-      - 'meridio-pull-request'
+      - 'meridio-periodic'
 
 - job-template:
-    name: 'meridio-pull-request'
+    name: 'meridio-periodic'
     project-type: pipeline
     disabled: '{obj:disabled}'
 
@@ -66,7 +65,7 @@
           description: Git URL of the project
       - string:
           name: CURRENT_BRANCH
-          default: "pr/{ghprb-pull-id}"
+          default: "master"
           description: Current Git branch
       - string:
           name: DEFAULT_BRANCH
@@ -74,25 +73,18 @@
           description: default branch
       - string:
           name: BUILD_STEPS
-          default: "build"
+          default: "build tag push"
           description: Steps to run during build
       - string:
           name: IMAGE_REGISTRY
           default: 'registry.nordix.org/cloud-native/meridio'
           description: Meridio image regsitry
 
-    # https://opendev.org/jjb/jenkins-job-builder/src/commit/be422af6bb5edc32886a98d78340051f71244c41/jenkins_jobs/modules/triggers.py#L1235
     triggers:
-      - github-pull-request:
-          admin-list:
-            - LionelJouin
-          auth-id: '{ghprb-auth-id}'
-          github-hooks: true
-          permit-all: true
-          no-commit-status: true
-          trigger-phrase: '/reverify'
-          only-trigger-phrase: false
-          cron: 'H/5 * * * *'
+      - pollscm:
+          cron: '@midnight'
 
     dsl: 
       !include-raw-escape: Jenkinsfile
+
+# vim: set ts=2 sw=2 expandtab:
