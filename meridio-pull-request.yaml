@@ -22,7 +22,7 @@
 
     project: 'meridio-pull-request'
 
-    ghprb-auth-id: '59e440bd-98a2-4c8a-9d75-b9c4a4fbad5d'
+    ghprb-auth-id: '7d3d8791-9053-4a69-a9fa-1e78b635d114'
     ghprb-pull-id: ${{ghprbPullId}}
 
     jobs:
