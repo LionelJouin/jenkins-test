@@ -18,23 +18,18 @@
 # ============LICENSE_END=========================================================
 
 - project:
-    name: 'meridio-experimentation-jenkins-test'
+    name: 'jenkins-test-pull-request'
 
-    project: 'meridio-experimentation-jenkins-test'
+    project: 'jenkins-test-pull-request'
 
-    ghprb-auth-id: '6c8995d2-4242-4633-8506-df7586724885'
-    stream:
-      - 'main':
-          branch: '${{ghprbActualCommit}}'
-
-    image-name:
-      - my-image
+    ghprb-auth-id: '7d3d8791-9053-4a69-a9fa-1e78b635d114'
+    ghprb-pull-id: ${{ghprbPullId}}
 
     jobs:
-      - 'meridio-experimentation-jenkins-test-{image-name}-{stream}'
+      - 'jenkins-test-pull-request'
 
 - job-template:
-    name: 'meridio-experimentation-jenkins-test-{image-name}-{stream}'
+    name: 'jenkins-test-pull-request'
     project-type: pipeline
     disabled: '{obj:disabled}'
 
@@ -53,18 +48,40 @@
           name: PROJECT
           default: 'jenkins-test'
           description: JJB configured PROJECT parameter to identify a Nordix GitHub project
+      - string:
+          name: IMAGE_NAMES
+          default: 'load-balancer proxy tapa ipam nsp ctraffic frontend'
+          description: Images to compile
+      - string:
+          name: IMAGE_VERSION
+          default: 'latest'
+          description: Version of the images
+      - string:
+          name: E2E_ENABLED
+          default: "false"
+          description: Is E2E Tests enabled?
+      - string:
+          name: GIT_PROJECT
+          default: "https://github.com/LionelJouin/jenkins-test.git"
+          description: Git URL of the project
+      - string:
+          name: CURRENT_BRANCH
+          default: "pr/{ghprb-pull-id}"
+          description: Current Git branch
+      - string:
+          name: DEFAULT_BRANCH
+          default: "master"
+          description: default branch
+      - string:
+          name: BUILD_STEPS
+          default: "build"
+          description: Steps to run during build
+      - string:
+          name: IMAGE_REGISTRY
+          default: 'registry.nordix.org/cloud-native/meridio'
+          description: Meridio image regsitry
 
-    scm:
-      - git:
-          url: 'https://github.com/$GITHUB_ORGANIZATION/$PROJECT.git'
-          branches:
-            - '{branch}'
-          refspec: '+refs/pull/*:refs/remotes/origin/pr/*'
-          timeout: 15
-          wipe-workspace: true
-          choosing-strategy: 'default'
-          clean_before: false
-
+    # https://opendev.org/jjb/jenkins-job-builder/src/commit/be422af6bb5edc32886a98d78340051f71244c41/jenkins_jobs/modules/triggers.py#L1235
     triggers:
       - github-pull-request:
           admin-list:
@@ -72,52 +89,10 @@
           auth-id: '{ghprb-auth-id}'
           github-hooks: true
           permit-all: true
+          no-commit-status: true
           trigger-phrase: '/reverify'
           only-trigger-phrase: false
           cron: 'H/5 * * * *'
-          status-context: 'Nordix Jenkins Image Build: {image-name}'
-
-    # builders:
-    #   - shell: |-
-    #       echo "test ABC"
-    #       printenv
-
-    # dsl: |
-    #   stage('Build another job') {{
-    #     build(job: "Hello-World")
-    #   }}
-
-    # dsl:
-    #   !include-raw-escape: Jenkinsfile.groovy
-
-    # pipeline:
-    #   script: 
-    #       !include-raw: ./Jenkinsfile
 
     dsl: 
       !include-raw-escape: Jenkinsfile
-
-    # dsl: |
-    #   build job: "job1"
-    #   parallel [
-    #     2a: build job: "job2a",
-    #     2b: node "dummynode" {
-    #       sh "echo I'm alive!"
-    #     }
-    #   ]
-
-    # pipeline:
-    #   script: |
-    #     # Your dsl script goes here.
-    #     node {
-    #       echo 'Hello world'
-    #     }
-    # sandbox: true
-
-    # sandbox: true
-    # pipeline-scm:
-    #   scm:
-    #     - hg:
-    #         url: https://raw.githubusercontent.com/LionelJouin/jenkins-test/main/Jenkinsfile
-    #         clean: true
-
