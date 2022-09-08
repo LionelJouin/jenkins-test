@@ -18,18 +18,18 @@
 # ============LICENSE_END=========================================================
 
 - project:
-    name: 'meridio-pull-request'
+    name: 'meridio-operator-pull-request'
 
-    project: 'meridio-pull-request'
+    project: 'meridio-operator-pull-request'
 
     ghprb-auth-id: '7d3d8791-9053-4a69-a9fa-1e78b635d114'
     ghprb-pull-id: ${{ghprbPullId}}
 
     jobs:
-      - 'meridio-pull-request'
+      - 'meridio-operator-pull-request'
 
 - job-template:
-    name: 'meridio-pull-request'
+    name: 'meridio-operator-pull-request'
     project-type: pipeline
     disabled: '{obj:disabled}'
 
@@ -37,7 +37,7 @@
 
     properties:
       - github:
-          url: https://github.com/Nordix/Meridio
+          url: https://github.com/Nordix/Meridio-Operator
 
     parameters:
       - string:
@@ -46,12 +46,8 @@
           description: JJB configured parameter to identify GitHub Organization
       - string:
           name: PROJECT
-          default: 'Meridio'
+          default: 'Meridio-Operator'
           description: JJB configured PROJECT parameter to identify a Nordix GitHub project
-      - string:
-          name: IMAGE_NAMES
-          default: 'load-balancer proxy tapa ipam nsp ctraffic frontend'
-          description: Images to compile
       - string:
           name: IMAGE_VERSION
           default: 'latest'
@@ -62,7 +58,7 @@
           description: Is E2E Tests enabled?
       - string:
           name: GIT_PROJECT
-          default: "https://github.com/Nordix/Meridio.git"
+          default: "https://github.com/Nordix/Meridio-Operator.git"
           description: Git URL of the project
       - string:
           name: CURRENT_BRANCH
@@ -74,7 +70,7 @@
           description: default branch
       - string:
           name: BUILD_STEPS
-          default: "build"
+          default: "docker-build docker-push"
           description: Steps to run during build
       - string:
           name: IMAGE_REGISTRY
@@ -95,4 +91,4 @@
           cron: 'H/5 * * * *'
 
     dsl: 
-      !include-raw-escape: Jenkinsfile
+      !include-raw-escape: operator.Jenkinsfile

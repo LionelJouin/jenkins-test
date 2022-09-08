@@ -3,7 +3,6 @@ import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
 pending = 'PENDING'
 success = 'SUCCESS'
 failure = 'FAILURE'
-base_image = 'base-image'
 in_progress = 'In Progress.'
 completed = 'Completed.'
 failed = 'Failed'
@@ -12,7 +11,6 @@ node {
     build_number = env.BUILD_NUMBER
     workspace = env.WORKSPACE
     ws("${workspace}/${build_number}") {
-        def image_names = params.IMAGE_NAMES.split(' ')
         def version = params.IMAGE_VERSION
         def e2e_enabled = params.E2E_ENABLED
         def git_project = params.GIT_PROJECT
@@ -20,9 +18,8 @@ node {
         def default_branch = params.DEFAULT_BRANCH
         def build_steps = params.BUILD_STEPS
         def image_registry = params.IMAGE_REGISTRY
-        def local_version =  "${env.JOB_NAME}-${build_number}"
 
-        stage ('Debug') {
+        stage('Debug') {
             sh 'ls'
             sh 'pwd'
             env.PATH = "${env.PATH}:/usr/local/go/bin"
@@ -33,7 +30,7 @@ node {
             sh 'which go'
             sh 'go version'
         }
-        stage ('Clone/Checkout') {
+        stage('Clone/Checkout') {
             git branch: default_branch, url: git_project
             checkout([
                 $class: 'GitSCM',
@@ -46,23 +43,20 @@ node {
             ])
             sh 'git show'
         }
-        stage ('Verify') {
+        stage('Verify') {
             Verify().call()
         }
-        stage ('Docker login') {
+        stage('Docker login') {
             wrap([$class: 'MaskPasswordsBuildWrapper', varPasswordPairs: [[password: env.HARBOR_USERNAME, var: 'HARBOR_USERNAME'], [password: env.HARBOR_PASSWORD, var: 'HARBOR_PASSWORD'], [password: image_registry, var: 'IMAGE_REGISTRY']]]) {
                 sh '''#!/bin/bash -eu
                 echo ${HARBOR_PASSWORD} | docker login --username ${HARBOR_USERNAME} --password-stdin ${IMAGE_REGISTRY}
                 '''
             }
         }
-        stage ('Base Image') {
-            BaseImage(version, build_steps, image_registry, local_version).call()
+        stage('Image') {
+            Build(version, build_steps, image_registry).call()
         }
-        stage ('Images') {
-            Images(image_names, version, build_steps, image_registry, local_version).call()
-        }
-        stage ('E2E') {
+        stage('E2E') {
             E2e(e2e_enabled).call()
         }
         stage('Cleanup') {
@@ -92,7 +86,7 @@ def UnitTests() {
         stage('Unit Tests') {
             try {
                 SetBuildStatus(in_progress, context, pending)
-                sh 'make test'
+                echo 'make test' // todo
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
@@ -109,7 +103,7 @@ def Linter() {
         stage('Linter') {
             try {
                 SetBuildStatus(in_progress, context, pending)
-                sh 'make lint'
+                echo 'make lint' // todo
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
@@ -129,9 +123,9 @@ def GeneratedCode() {
         def context = 'Generated code verification'
         def exception_message = 'Generated code verification failed'
         SetBuildStatus(in_progress, context, pending)
-        stage('go mod tidy') {
+        stage('manifests') {
             try {
-                sh 'go mod tidy'
+                echo 'make manifests' // todo
                 if (GetModifiedFiles() != '') {
                     throw new Exception(exception_message)
                 }
@@ -142,9 +136,9 @@ def GeneratedCode() {
                 Error(e).call()
             }
         }
-        stage('go generate ./...') {
+        stage('generate') {
             try {
-                sh 'make generate'
+                echo 'make generate' // todo
                 if (GetModifiedFiles() != '') {
                     throw new Exception(exception_message)
                 }
@@ -154,54 +148,22 @@ def GeneratedCode() {
                 sh 'git status -s'
                 Error(e).call()
             }
-        }
-        stage('Proto') {
-            // TODO: protoc version could be different
-            Utils.markStageSkippedForConditional('Proto')
-        // try {
-        //     sh 'make proto'
-        //     if (GetModifiedFiles() != '') {
-        //         throw new Exception(exception_message)
-        //     }
-        // } catch (Exception e) {
-        //     SetBuildStatus(failed, context, failure)
-        //     sh 'git diff'
-        //     sh 'git status -s'
-        //     Error(e).call()
-        // }
         }
         SetBuildStatus(completed, context, success)
     }
 }
 
-def BaseImage(version, build_steps, registry, local_version) {
-    return {
-        Build(base_image, version, build_steps, registry, local_version).call()
-    }
-}
-
-// Call Build function for every images in parallel
-def Images(images, version, build_steps, registry, local_version) {
-    return {
-        def stages = [:]
-        for (i in images) {
-            stages.put(i, Build(i, version, build_steps, registry, local_version))
-        }
-        parallel(stages)
-    }
-}
-
 // Build set the github commit status
-def Build(image, version, build_steps, registry, local_version) {
+def Build(version, build_steps, registry) {
     return {
-        stage("${image} (${version}): ${build_steps}") {
-            def context = "Image: ${image}"
+        stage("(${version}): ${build_steps}") {
+            def context = 'Image'
             def in_progress_message = "${in_progress} (${build_steps})"
             def completed_message = "${completed} (${build_steps})"
             def failed_message = "${failed} (${build_steps})"
             try {
                 SetBuildStatus(in_progress_message, context, pending)
-                sh "make ${image} VERSION=${version} BUILD_STEPS='${build_steps}' REGISTRY=${registry} LOCAL_VERSION=${local_version} BASE_IMAGE=${base_image}:${local_version}"
+                echo "make ${build_steps} ${version} ${registry}" // todo
                 SetBuildStatus(completed_message, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed_message, context, failure)
