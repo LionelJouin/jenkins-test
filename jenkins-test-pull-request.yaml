@@ -22,7 +22,7 @@
 
     project: 'jenkins-test-pull-request'
 
-    ghprb-auth-id: '7d3d8791-9053-4a69-a9fa-1e78b635d114'
+    ghprb-auth-id: '3d52ee52-6c24-40ee-863c-ef728f8c22c2'
     ghprb-pull-id: ${{ghprbPullId}}
 
     jobs:
@@ -38,6 +38,7 @@
     properties:
       - github:
           url: https://github.com/LionelJouin/jenkins-test
+          display-name: LionelJouin-Jenkins-Github-Token-New
 
     parameters:
       - string:
@@ -70,7 +71,7 @@
           description: Current Git branch
       - string:
           name: DEFAULT_BRANCH
-          default: "master"
+          default: "main"
           description: default branch
       - string:
           name: BUILD_STEPS
