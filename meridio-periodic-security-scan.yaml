@@ -22,8 +22,6 @@
 
     project: 'meridio-periodic-security-scan'
 
-    ghprb-auth-id: '7d3d8791-9053-4a69-a9fa-1e78b635d114'
-
     jobs:
       - 'meridio-periodic-security-scan'
 
@@ -59,10 +57,13 @@
           name: IMAGE_VERSION
           default: 'latest'
           description: Version of the images
+      - string:
+          name: EMAIL_RECIPIENTS
+          default: 'lionel.jouin@est.tech'
+          description: Recipients of the report
 
     triggers:
-      - pollscm:
-          cron: '@midnight'
+      - timed: '@midnight'
 
     dsl: 
       !include-raw-escape: Jenkinsfile.security-scan

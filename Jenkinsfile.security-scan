@@ -1,7 +1,5 @@
 
 node {
-    // def defaultJenkinsfile = load 'Jenkinsfile'
-
     build_number = env.BUILD_NUMBER
     workspace = env.WORKSPACE
     ws("${workspace}/${build_number}") {
@@ -10,6 +8,9 @@ node {
         def default_branch = params.DEFAULT_BRANCH
         def image_registry = params.IMAGE_REGISTRY
         def version = params.IMAGE_VERSION
+        def email_recipients = EMAIL_RECIPIENTS
+
+        def cveBadge = addEmbeddableBadgeConfiguration(id: 'meridio-cve', subject: 'CVE', color: 'peru', status: '?')
 
         stage('Debug') {
             sh 'ls'
@@ -22,69 +23,82 @@ node {
             sh 'which go'
             sh 'go version'
         }
-        stage('Clone/Checkout') {
-            git branch: default_branch, url: git_project
-            checkout([
-                $class: 'GitSCM',
-                branches: [[name: current_branch]],
-                extensions: [],
-                userRemoteConfigs: [[
-                    refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*',
-                    url: git_project
-                ]]
-            ])
-            sh 'git show'
-        }
-        stage('Grype') {
-            sh "make grype VERSION=${version} REGISTRY=${image_registry}"
-        }
-        stage('Nancy') {
-            sh 'make nancy'
-        }
-        stage('Trivy') {
-            sh "make trivy VERSION=${version} REGISTRY=${image_registry}"
-        }
-        stage('Parse') {
-            sh './hack/parse_security_scan.sh'
-        }
-        // stage('Debug') {
-        //     sh 'printenv'
-        //     sh 'mkdir _output'
+        timeout(30) {
+            stage('Clone/Checkout') {
+                git branch: default_branch, url: git_project
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: current_branch]],
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*',
+                        url: git_project
+                    ]]
+                ])
+                sh 'git show'
+            }
+            stage('Grype') {
+                sh """
+                    . ${HOME}/.profile
+                    make grype VERSION=${version} REGISTRY=${image_registry}
+                """
+            }
+            stage('Nancy') {
+                sh """
+                    . ${HOME}/.profile
+                    make nancy
+                """
+            }
+            stage('Trivy') {
+                sh """
+                    . ${HOME}/.profile
+                    make trivy VERSION=${version} REGISTRY=${image_registry}
+                """
+            }
+            stage('Parse') {
+                sh """
+                    . ${HOME}/.profile
+                    ./hack/parse_security_scan.sh
+                """
+            }
+            // stage('Debug') {
+            //     sh 'printenv'
+            //     sh 'mkdir _output'
 
-        //     sh 'echo grype > _output/grype.json'
-        //     sh 'echo nancy > _output/nancy.json'
-        //     sh 'echo trivi > _output/trivy.json'
+            //     sh 'echo grype > _output/grype.json'
+            //     sh 'echo nancy > _output/nancy.json'
+            //     sh 'echo trivi > _output/trivy.json'
 
-        //     sh 'echo "./_output/grype_base-image_latest.json" >> _output/report.txt'
-        //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
-        //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
-        //     sh 'echo "" >> _output/report.txt'
-        //     sh 'echo "./_output/grype_frontend_latest.json" >> _output/report.txt'
-        //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
-        //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/nordix/meridio" >> _output/report.txt'
-        //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
-        //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/nordix/meridio" >> _output/report.txt'
+            //     sh 'echo "./_output/grype_base-image_latest.json" >> _output/report.txt'
+            //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
+            //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
+            //     sh 'echo "" >> _output/report.txt'
+            //     sh 'echo "./_output/grype_frontend_latest.json" >> _output/report.txt'
+            //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
+            //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/nordix/meridio" >> _output/report.txt'
+            //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/report.txt'
+            //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/nordix/meridio" >> _output/report.txt'
 
-        //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
-        //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
-        //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
-        //     sh 'echo "CVE-2015-5240   High    google.golang.org/protobuf  github.com/nordix/meridio" >> _output/list.txt'
-        //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
-        //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/nordix/meridio" >> _output/list.txt'
-        // }
-        stage('Mail') {
-            archiveArtifacts artifacts: '_output/*', followSymlinks: false
+            //     sh 'echo "CVE-2015-5237   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
+            //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
+            //     sh 'echo "CVE-2015-5238   High    google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
+            //     sh 'echo "CVE-2015-5240   High    google.golang.org/protobuf  github.com/nordix/meridio" >> _output/list.txt'
+            //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/grpc-ecosystem/grpc-health-probe" >> _output/list.txt'
+            //     sh 'echo "CVE-2021-22570  Medium  google.golang.org/protobuf  github.com/nordix/meridio" >> _output/list.txt'
+            // }
+            stage('Report') {
+                archiveArtifacts artifacts: '_output/*', followSymlinks: false
 
-            def number_of_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
-            def list_of_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
-            def number_of_high_severity_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
-            def list_of_high_severity_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
-            def git_describe =  sh(script: 'git describe --dirty --tags', returnStdout: true).trim()
-            def git_rev =  sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-            def report =  sh(script: 'cat _output/report.txt', returnStdout: true).trim()
+                def number_of_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
+                def list_of_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
+                def number_of_high_severity_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
+                def list_of_high_severity_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
+                def git_describe =  sh(script: 'git describe --dirty --tags', returnStdout: true).trim()
+                def git_rev =  sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                def report =  sh(script: 'cat _output/report.txt', returnStdout: true).trim()
 
-            def subject = "Meridio - Security Scan - ${number_of_high_severity_cves} high severity CVEs detected"
-            def body = """
+                def subject = "Meridio - Security Scan - ${number_of_high_severity_cves} high severity CVEs detected"
+                def body = """
 Run: ${RUN_DISPLAY_URL}
 git describe --dirty --tags: ${git_describe}
 git rev-parse HEAD: ${git_rev}
@@ -100,11 +114,18 @@ List of CVEs with high severity: ${list_of_high_severity_cves}
 report:
 ${report}
 """
-            emailext body: "${body}", subject: "${subject}", to: 'lionel.jouin@est.tech'
+                emailext body: "${body}", subject: "${subject}", to: "${email_recipients}"
+
+                cveBadge.setStatus("${number_of_high_severity_cves}")
+            }
         }
         stage('Cleanup') {
-            echo 'Cleanup'
-        // defaultJenkinsfile.Cleanup()
+            Cleanup()
         }
     }
+}
+
+// Cleanup directory
+def Cleanup() {
+    cleanWs()
 }
