@@ -18,5 +18,11 @@ pipeline {
       }
     }
 
+    stage('printenv') {
+      steps {
+        sh 'printenv'
+      }
+    }
+
   }
 }
