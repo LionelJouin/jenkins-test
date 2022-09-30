@@ -46,7 +46,6 @@ pipeline {
         sh "echo '${currentBuild.buildVariables}'"
         sh "echo '${currentBuild.changeSets}'"
         sh "echo '${currentBuild.upstreamBuilds}'"
-        sh "echo '${currentBuild.rawBuild}'"
         sh "echo '${currentBuild.keepLog}'"
       }
     }
