@@ -1,0 +1,110 @@
+
+pending = 'PENDING'
+success = 'SUCCESS'
+failure = 'FAILURE'
+base_image = 'base-image'
+in_progress = 'In Progress.'
+completed = 'Completed.'
+failed = 'Failed'
+
+node {
+    build_number = env.BUILD_NUMBER
+    workspace = env.WORKSPACE
+    ws("${workspace}/${build_number}") {
+        def git_project = params.GIT_PROJECT
+        def current_branch = params.CURRENT_BRANCH
+        def default_branch = params.DEFAULT_BRANCH
+
+        stage('Debug') {
+            sh 'ls'
+            sh 'pwd'
+            env.PATH = "${env.PATH}:/usr/local/go/bin"
+            env.HARBOR_USERNAME = ''
+            env.HARBOR_PASSWORD = ''
+            sh 'printenv'
+            sh 'who'
+            sh 'which go'
+            sh 'go version'
+        }
+        stage('Clone/Checkout') {
+            git branch: default_branch, url: git_project
+            checkout([
+                $class: 'GitSCM',
+                branches: [[name: current_branch]],
+                extensions: [],
+                userRemoteConfigs: [[
+                    refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*',
+                    url: git_project
+                ]]
+            ])
+            sh 'git show'
+        }
+        stage('Debug') {
+            sh 'printenv'
+            // env.GIT_COMMIT = 'fb0a057ab243550f91d27b169dee6a64eaa21deb'
+            // env.GIT_PREVIOUS_SUCCESSFUL_COMMIT = '1a41109de6d6e0a5073a5f4333d80d2ae97dd632'
+            // env.GIT_PREVIOUS_COMMIT = '1a41109de6d6e0a5073a5f4333d80d2ae97dd632'
+            // env.GIT_LOCAL_BRANCH = 'main'
+            // env.GIT_URL = 'https://github.com/LionelJouin/jenkins-test.git'
+            env.BRANCH_NAME = 'main'
+            sh 'printenv'
+            sh "echo '${currentBuild.number}'"
+            sh "echo '${currentBuild.result}'"
+            sh "echo '${currentBuild.currentResult}'"
+            sh "echo '${currentBuild.displayName}'"
+            sh "echo '${currentBuild.fullDisplayName}'"
+            sh "echo '${currentBuild.projectName}'"
+            sh "echo '${currentBuild.fullProjectName}'"
+            sh "echo '${currentBuild.description}'"
+            sh "echo '${currentBuild.id}'"
+            sh "echo '${currentBuild.timeInMillis}'"
+            sh "echo '${currentBuild.startTimeInMillis}'"
+            sh "echo '${currentBuild.duration}'"
+            sh "echo '${currentBuild.durationString}'"
+            sh "echo '${currentBuild.previousBuild}'"
+            sh "echo '${currentBuild.previousBuildInProgress}'"
+            sh "echo '${currentBuild.previousBuiltBuild}'"
+            sh "echo '${currentBuild.previousCompletedBuild}'"
+            sh "echo '${currentBuild.previousFailedBuild}'"
+            sh "echo '${currentBuild.previousNotFailedBuild}'"
+            sh "echo '${currentBuild.previousSuccessfulBuild}'"
+            sh "echo '${currentBuild.nextBuild}'"
+            sh "echo '${currentBuild.absoluteUrl}'"
+            sh "echo '${currentBuild.buildVariables}'"
+            sh "echo '${currentBuild.changeSets}'" // here
+            sh "echo '${currentBuild.upstreamBuilds}'"
+            sh "echo '${currentBuild.rawBuild}'"
+            sh "echo '${currentBuild.keepLog}'"
+        }
+        stage('Verify') {
+            SetBuildStatus(in_progress, 'test', pending)
+        }
+    }
+}
+
+// Set the commit status on Github
+// https://plugins.jenkins.io/github/#plugin-content-pipeline-examples
+def SetBuildStatus(String message, String context, String state) {
+    // https://kb.novaordis.com/index.php/Jenkins_currentBuild#result
+
+    echo "${currentBuild}"
+
+    currentBuild.description = 'koukou A'
+    env.commitID = 'fb0a057ab243550f91d27b169dee6a64eaa21deb'
+    // currentBuild.commitID = 'fb0a057ab243550f91d27b169dee6a64eaa21deb'
+    // currentBuild.displayName = 'koukou B'
+
+    step([
+        $class: 'GitHubCommitStatusSetter',
+        reposSource: [$class: 'ManuallyEnteredRepositorySource', url: 'https://github.com/LionelJouin/jenkins-test'],
+        commitShaSource: [$class: 'ManuallyEnteredShaSource', sha: GetCommitSha()],
+        contextSource: [$class: 'ManuallyEnteredCommitContextSource', context: context],
+        errorHandlers: [[$class: 'ShallowAnyErrorHandler']],
+        statusResultSource: [ $class: 'ConditionalStatusResultSource', results: [[$class: 'AnyBuildResult', message: message, state: state]] ]
+    ])
+}
+
+// Return the current commit sha
+def GetCommitSha() {
+    return sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+}

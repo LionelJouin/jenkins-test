@@ -42,26 +42,6 @@
 
     parameters:
       - string:
-          name: GITHUB_ORGANIZATION
-          default: 'LionelJouin'
-          description: JJB configured parameter to identify GitHub Organization
-      - string:
-          name: PROJECT
-          default: 'jenkins-test'
-          description: JJB configured PROJECT parameter to identify a Nordix GitHub project
-      - string:
-          name: IMAGE_NAMES
-          default: 'load-balancer proxy tapa ipam nsp ctraffic frontend'
-          description: Images to compile
-      - string:
-          name: IMAGE_VERSION
-          default: 'latest'
-          description: Version of the images
-      - string:
-          name: E2E_ENABLED
-          default: "false"
-          description: Is E2E Tests enabled?
-      - string:
           name: GIT_PROJECT
           default: "https://github.com/LionelJouin/jenkins-test.git"
           description: Git URL of the project
@@ -73,14 +53,6 @@
           name: DEFAULT_BRANCH
           default: "main"
           description: default branch
-      - string:
-          name: BUILD_STEPS
-          default: "build"
-          description: Steps to run during build
-      - string:
-          name: IMAGE_REGISTRY
-          default: 'registry.nordix.org/cloud-native/meridio'
-          description: Meridio image regsitry
 
     # https://opendev.org/jjb/jenkins-job-builder/src/commit/be422af6bb5edc32886a98d78340051f71244c41/jenkins_jobs/modules/triggers.py#L1235
     triggers:
@@ -96,4 +68,4 @@
           cron: 'H/5 * * * *'
 
     dsl: 
-      !include-raw-escape: Jenkinsfile
+      !include-raw-escape: Jenkinsfile.test
