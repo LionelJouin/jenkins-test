@@ -49,7 +49,7 @@ node {
             stage('E2E') {
                 echo "Meridio version: $meridio_version"
                 echo "TAPA version: $tapa_version"
-                // sh 'sleep 10'
+            // sh 'sleep 10'
             }
         }
         stage('Cleanup') {
@@ -67,36 +67,19 @@ node {
             sh 'echo "- v1.5.0" >> test-scope.yaml'
             sh 'echo "- v1.6.0" >> test-scope.yaml'
             sh 'echo "Kubernetes:" >> test-scope.yaml'
-            sh 'echo "- v1.25.2" >> test-scope.yaml'
-            sh 'echo "- v1.24.6" >> test-scope.yaml'
-            sh 'echo "- v1.23.12" >> test-scope.yaml'
-            sh 'echo "- v1.22.15" >> test-scope.yaml'
-            sh 'echo "- v1.21.14" >> test-scope.yaml'
+            sh 'echo "- v1.25" >> test-scope.yaml'
+            sh 'echo "- v1.24" >> test-scope.yaml'
+            sh 'echo "- v1.23" >> test-scope.yaml'
+            sh 'echo "- v1.22" >> test-scope.yaml'
+            sh 'echo "- v1.21" >> test-scope.yaml'
             sh 'echo "IP-Family:" >> test-scope.yaml'
             sh 'echo "- dualstack" >> test-scope.yaml'
             sh 'echo "- ipv4" >> test-scope.yaml'
             sh 'echo "- ipv6" >> test-scope.yaml'
             sh 'cat test-scope.yaml'
-        // Meridio:
-        // - v0.8.0
-        // - latest
-        // TAPA:
-        // - v0.8.0
-        // - latest
-        // NSM:
-        // - v1.4.0
-        // - v1.5.0
-        // - v1.6.0
-        // Kubernetes:
-        // - v1.25.2
-        // - v1.24.6
-        // - v1.23.12
-        // - v1.22.15
-        // - v1.21.14
-        // IP-Family:
-        // - dualstack
-        // - ipv4
-        // - ipv6
+        }
+        stage('Report') {
+            Report().call()
         }
         stage('Next') {
             Next(next).call()
@@ -162,6 +145,25 @@ def GetIPFamily() {
     def index_of_ip_family_temp = sh(script: "shuf -i 1-$number_of_ip_family -n1", returnStdout: true).trim()
     def index_of_ip_family = sh(script: "expr $index_of_ip_family_temp - 1 || true", returnStdout: true).trim()
     return sh(script: "cat test-scope.yaml | yq '.IP-Family[$index_of_ip_family]'", returnStdout: true).trim()
+}
+
+def Report() {
+    return {
+        def meridio_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-meridio', subject: 'Meridio', color: 'mediumslateblue', status: '?')
+        meridio_badge.setStatus('latest (✔ 4 / ✘ 15) | v0.8.0 (✔ 50 / ✘ 1)')
+
+        def tapa_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-tapa', subject: 'TAPA', color: 'mediumslateblue', status: '?')
+        tapa_badge.setStatus('latest (✔ 4 / ✘ 15) | v0.8.0 (✔ 50 / ✘ 1)')
+
+        def nsm_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-nsm', subject: 'NSM', color: 'mediumslateblue', status: '?')
+        nsm_badge.setStatus('v1.6.0 (✔ 3 / ✘ 4) | v1.5.0 (✔ 5 / ✘ 7) | v1.4.0 (✔ 4 / ✘ 8)')
+
+        def ip_family_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-ip-family', subject: 'IP Family', color: 'mediumslateblue', status: '?')
+        ip_family_badge.setStatus('ipv4 (✔ 2 / ✘ 23) | ipv6 (✔ 5 / ✘ 1) | dualstack (✔ 30 / ✘ 8)')
+
+        def kubernetes_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-kubernetes', subject: 'Kubernetes', color: 'mediumslateblue', status: '?')
+        kubernetes_badge.setStatus('v1.25 (✔ 3 / ✘ 4) | v1.24 (✔ 5 / ✘ 7) | v1.23 (✔ 4 / ✘ 8) | v1.22 (✔ 12 / ✘ 1) | v1.21 (✔ 0 / ✘ 1)')
+    }
 }
 
 // Raise error in Jenkins job
