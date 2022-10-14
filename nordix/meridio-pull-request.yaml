@@ -1,0 +1,104 @@
+---
+# ============LICENSE_START=======================================================
+#  Copyright (C) 2021 Nordix Foundation.
+# ================================================================================
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+# ============LICENSE_END=========================================================
+
+- project:
+    name: 'meridio-pull-request'
+
+    project: 'meridio-pull-request'
+
+    # NOTE (fdegir): auth-id is taken from Jenkins Global Configuration
+    # by clicking Auth ID button for the desired GitHub Server API URL
+    # Please ensure you are looking at GitHub Pull Request Builder part
+    # of global configuration and not to GitHub Server configuration
+    ghprb-auth-id: 'cdfd2452-a9e2-41a3-8ee6-9058512b4aff'
+    ghprb-pull-id: ${{ghprbPullId}}
+
+    jobs:
+      - 'meridio-pull-request'
+
+- job-template:
+    name: 'meridio-pull-request'
+    project-type: pipeline
+    disabled: '{obj:disabled}'
+
+    concurrent: true
+
+    properties:
+      - github:
+          url: https://github.com/Nordix/Meridio
+
+    parameters:
+      - string:
+          name: GITHUB_ORGANIZATION
+          default: 'Nordix'
+          description: JJB configured parameter to identify GitHub Organization
+      - string:
+          name: PROJECT
+          default: 'Meridio'
+          description: JJB configured PROJECT parameter to identify a Nordix GitHub project
+      - string:
+          name: IMAGE_NAMES
+          default: 'stateless-lb proxy tapa ipam nsp example-target frontend'
+          description: Images to compile
+      - string:
+          name: IMAGE_VERSION
+          default: 'latest'
+          description: Version of the images
+      - string:
+          name: E2E_ENABLED
+          default: "false"
+          description: Is E2E Tests enabled?
+      - string:
+          name: GIT_PROJECT
+          default: "https://github.com/Nordix/Meridio.git"
+          description: Git URL of the project
+      - string:
+          name: CURRENT_BRANCH
+          default: "pr/{ghprb-pull-id}"
+          description: Current Git branch
+      - string:
+          name: DEFAULT_BRANCH
+          default: "master"
+          description: default branch
+      - string:
+          name: BUILD_STEPS
+          default: "build"
+          description: Steps to run during build
+      - string:
+          name: IMAGE_REGISTRY
+          default: 'registry.nordix.org/cloud-native/meridio'
+          description: Meridio image regsitry
+
+    # https://opendev.org/jjb/jenkins-job-builder/src/commit/be422af6bb5edc32886a98d78340051f71244c41/jenkins_jobs/modules/triggers.py#L1235
+    triggers:
+      - github-pull-request:
+          admin-list:
+            - LionelJouin
+            - uablrek
+            - zolug
+          auth-id: '{ghprb-auth-id}'
+          github-hooks: true
+          permit-all: true
+          no-commit-status: true
+          trigger-phrase: '/reverify'
+          only-trigger-phrase: false
+          cron: 'H/5 * * * *'
+
+    dsl: 
+      !include-raw-escape: Jenkinsfile
