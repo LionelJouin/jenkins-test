@@ -24,6 +24,9 @@ in_progress = 'In Progress.'
 completed = 'Completed.'
 failed = 'Failed'
 
+exception_message_exec = 'failed to execute the following command: '
+exception_message_code_generation = 'Generated code verification failed'
+
 node('nordix-nsm-build-ubuntu1804') {
     build_number = env.BUILD_NUMBER
     workspace = env.WORKSPACE
@@ -97,16 +100,14 @@ def UnitTests() {
     return {
         def context = 'Unit Tests'
         stage('Unit Tests') {
+            def command = 'make test'
             try {
                 SetBuildStatus(in_progress, context, pending)
-                sh '''
-                    . \${HOME}/.profile
-                    make test
-                '''
+                ExecSh(command).call()
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                Error(e).call()
+                Error(exception_message_exec + command).call()
             }
         }
     }
@@ -117,16 +118,14 @@ def Linter() {
     return {
         def context = 'Linter'
         stage('Linter') {
+            def command = 'make lint'
             try {
                 SetBuildStatus(in_progress, context, pending)
-                sh '''
-                    . \${HOME}/.profile
-                   make lint
-                '''
+                ExecSh(command).call()
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                Error(e).call()
+                Error(exception_message_exec + command).call()
             }
         }
     }
@@ -140,38 +139,29 @@ def Linter() {
 def GeneratedCode() {
     return {
         def context = 'Generated code verification'
-        def exception_message = 'Generated code verification failed'
         SetBuildStatus(in_progress, context, pending)
         stage('go mod tidy') {
+            def command = 'go mod tidy'
             try {
-                sh '''
-                    . \${HOME}/.profile
-                    go mod tidy
-                '''
+                ExecSh(command).call()
                 if (GetModifiedFiles() != '') {
-                    throw new Exception(exception_message)
+                    throw new Exception(exception_message_code_generation)
                 }
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                sh 'git diff'
-                sh 'git status -s'
-                Error(e).call()
+                Error(exception_message_exec + command).call()
             }
         }
         stage('go generate ./...') {
+            def command = 'make generate'
             try {
-                sh '''
-                    . \${HOME}/.profile
-                    make generate
-                '''
+                ExecSh(command).call()
                 if (GetModifiedFiles() != '') {
-                    throw new Exception(exception_message)
+                    throw new Exception(exception_message_code_generation)
                 }
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                sh 'git diff'
-                sh 'git status -s'
-                Error(e).call()
+                Error(exception_message_exec + command).call()
             }
         }
         stage('Proto') {
@@ -218,13 +208,14 @@ def Build(image, version, build_steps, registry, local_version) {
             def in_progress_message = "${in_progress} (${build_steps})"
             def completed_message = "${completed} (${build_steps})"
             def failed_message = "${failed} (${build_steps})"
+            def command = "make ${image} VERSION=${version} BUILD_STEPS='${build_steps}' REGISTRY=${registry} LOCAL_VERSION=${local_version} BASE_IMAGE=${base_image}:${local_version}"
             try {
                 SetBuildStatus(in_progress_message, context, pending)
-                sh "make ${image} VERSION=${version} BUILD_STEPS='${build_steps}' REGISTRY=${registry} LOCAL_VERSION=${local_version} BASE_IMAGE=${base_image}:${local_version}"
+                ExecSh(command).call()
                 SetBuildStatus(completed_message, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed_message, context, failure)
-                Error(e).call()
+                Error(exception_message_exec + command).call()
             }
         }
     }
@@ -247,6 +238,8 @@ def E2e(e2e_enabled) {
 // Raise error in Jenkins job
 def Error(e) {
     return {
+        sh 'git diff'
+        sh 'git status -s'
         Cleanup()
         error e
     }
@@ -255,6 +248,16 @@ def Error(e) {
 // Cleanup directory
 def Cleanup() {
     cleanWs()
+}
+
+// Execute command
+def ExecSh(command) {
+    return {
+        sh """
+            . \${HOME}/.profile
+            ${command}
+        """
+    }
 }
 
 // Set the commit status on Github

@@ -9,8 +9,9 @@ node('nordix-nsm-build-ubuntu1804') {
         def image_registry = params.IMAGE_REGISTRY
         def version = params.IMAGE_VERSION
         def email_recipients = EMAIL_RECIPIENTS
+        def image_names = IMAGE_NAMES
 
-        def cveBadge = addEmbeddableBadgeConfiguration(id: 'meridio-cve', subject: 'CVE', color: 'peru', status: '?')
+        def vulnerabilityBadge = addEmbeddableBadgeConfiguration(id: 'meridio-vulnerabilities', subject: 'vulnerabilities', color: 'peru', status: '?')
 
         timeout(30) {
             stage('Clone/Checkout') {
@@ -27,41 +28,33 @@ node('nordix-nsm-build-ubuntu1804') {
                 sh 'git show'
             }
             stage('Grype') {
-                sh """
-                    . ${HOME}/.profile
-                    make grype VERSION=${version} REGISTRY=${image_registry}
-                """
+                def command = "make grype VERSION=${version} REGISTRY=${image_registry} IMAGES='${image_names}'"
+                ExecSh(command).call()
             }
             stage('Nancy') {
-                sh """
-                    . ${HOME}/.profile
-                    make nancy
-                """
+                def command = 'make nancy'
+                ExecSh(command).call()
             }
             stage('Trivy') {
-                sh """
-                    . ${HOME}/.profile
-                    make trivy VERSION=${version} REGISTRY=${image_registry}
-                """
+                def command = "make trivy VERSION=${version} REGISTRY=${image_registry} IMAGES='${image_names}'"
+                ExecSh(command).call()
             }
             stage('Parse') {
-                sh """
-                    . ${HOME}/.profile
-                    ./hack/parse_security_scan.sh
-                """
+                def command = './hack/parse_security_scan.sh'
+                ExecSh(command).call()
             }
             stage('Report') {
                 archiveArtifacts artifacts: '_output/*', followSymlinks: false
 
-                def number_of_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
-                def list_of_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
-                def number_of_high_severity_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
-                def list_of_high_severity_cves =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
+                def number_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
+                def list_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
+                def number_of_high_severity_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
+                def list_of_high_severity_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
                 def git_describe =  sh(script: 'git describe --dirty --tags', returnStdout: true).trim()
                 def git_rev =  sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                 def report =  sh(script: 'cat _output/report.txt', returnStdout: true).trim()
 
-                def subject = "Meridio - Security Scan - ${number_of_high_severity_cves} high severity CVEs detected"
+                def subject = "Meridio - Security Scan - ${number_of_high_severity_vulnerabilities} high severity vulnerabilities detected"
                 def body = """
 Run: ${RUN_DISPLAY_URL}
 git describe --dirty --tags: ${git_describe}
@@ -69,18 +62,18 @@ git rev-parse HEAD: ${git_rev}
 Image registry: ${image_registry}
 Image Version: ${version}
 
-Number of CVEs: ${number_of_cves}
-List of CVEs: ${list_of_cves}
+Number of vulnerabilities: ${number_of_vulnerabilities}
+List of vulnerabilities: ${list_of_vulnerabilities}
 
-Number of CVEs with high severity: ${number_of_high_severity_cves}
-List of CVEs with high severity: ${list_of_high_severity_cves}
+Number of vulnerabilities with high severity: ${number_of_high_severity_vulnerabilities}
+List of vulnerabilities with high severity: ${list_of_high_severity_vulnerabilities}
 
 report:
 ${report}
 """
                 emailext body: "${body}", subject: "${subject}", to: "${email_recipients}"
 
-                cveBadge.setStatus("${number_of_high_severity_cves}")
+                vulnerabilityBadge.setStatus("${number_of_vulnerabilities}")
             }
         }
         stage('Cleanup') {
@@ -92,4 +85,14 @@ ${report}
 // Cleanup directory
 def Cleanup() {
     cleanWs()
+}
+
+// Execute command
+def ExecSh(command) {
+    return {
+        sh """
+            . \${HOME}/.profile
+            ${command}
+        """
+    }
 }

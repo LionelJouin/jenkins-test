@@ -61,6 +61,10 @@
           name: EMAIL_RECIPIENTS
           default: 'lionel.jouin@est.tech'
           description: Recipients of the report
+      - string:
+          name: IMAGE_NAMES
+          default: 'stateless-lb proxy tapa ipam nsp frontend'
+          description: Images to compile
 
     triggers:
       - timed: '@midnight'
