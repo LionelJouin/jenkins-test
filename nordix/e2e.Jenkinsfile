@@ -1,6 +1,6 @@
 import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
 
-node {
+node('nordix-nsm-build-ubuntu1804') {
     build_number = env.BUILD_NUMBER
     workspace = env.WORKSPACE
     ws("${workspace}/${build_number}") {
@@ -15,17 +15,6 @@ node {
         def nsm_version = params.NSM_VERSION
         def ip_family = params.IP_FAMILY
 
-        stage('Debug') {
-            sh 'ls'
-            sh 'pwd'
-            env.PATH = "${env.PATH}:/usr/local/go/bin"
-            env.HARBOR_USERNAME = ''
-            env.HARBOR_PASSWORD = ''
-            sh 'printenv'
-            sh 'who'
-            sh 'which go'
-            sh 'go version'
-        }
         stage('Clone/Checkout') {
             git branch: default_branch, url: git_project
             checkout([
@@ -42,28 +31,21 @@ node {
         stage('Environment') {
             currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch"
 
-            echo "make -s -C docs/demo/scripts/kind/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family"
-            echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-a --set ipFamily=dualstack'
-            echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-b --set vlan.id=200 --set ipFamily=dualstack'
-            echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-a --set default.trench.name=trench-a'
-            echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-b --set default.trench.name=trench-b'
+            sh "make -s -C docs/demo/scripts/kind/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family"
+            sh "helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-a --set ipFamily=$ip_family"
+            sh "helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-b --set vlan.id=200 --set ipFamily=$ip_family"
+            sh 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-a --set default.trench.name=trench-a'
+            sh 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-b --set default.trench.name=trench-b'
         }
         timeout(60) {
             stage('E2E') {
                 echo "Meridio version: $meridio_version"
                 echo "TAPA version: $tapa_version"
-                echo "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/kind-helm/$ip_family/config.txt | tr '\\n' ' ')\""
+                sh "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/kind-helm/$ip_family/config.txt | tr '\\n' ' ')\""
             }
         }
         stage('Cleanup') {
             Cleanup()
-        }
-        stage('Debug') {
-            def random = sh(script: 'shuf -i 1-8 -n1', returnStdout: true).trim()
-            if (random == '2') {
-                currentBuild.result = 'FAILURE'
-            }
-            sh "echo $random"
         }
         stage('Report') {
             Report().call()
@@ -137,7 +119,7 @@ def GetIPFamily() {
 // http://JENKINS_URL/job/meridio-e2e-test-kind/api/json?tree=allBuilds[status,timestamp,id,result,description]{0,9}&pretty=true
 def Report() {
     return {
-        def jenkins_url = ''
+        def jenkins_url = 'jenkins.nordix.org'
 
         def success = sh(script: """
         data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,999\\}&pretty=true")
@@ -226,13 +208,3 @@ def Error(e) {
 def Cleanup() {
     cleanWs()
 }
-
-// data=$(curl -s -L "http://JENKINS_URL/job/meridio-e2e-test-kind/api/json?tree=allBuilds\[status,timestamp,id,result,description\]&pretty=true")
-// data=$(cat config/test-1.json)
-// success=$(echo "$data" | jq -r '.allBuilds[] | select(.result == "SUCCESS") | [.description] | @tsv' | grep -v '^$')
-// failure=$(echo "$data" | jq -r '.allBuilds[] | select(.result == "FAILURE") | [.description] | @tsv' | grep -v '^$')
-// meridio_success=$(echo "$success" | grep -oP '(?<=Meridio version: ).*?(?=\/)' | sort | uniq -c | awk '{ printf "%s %s 0\n", $2, $1 }')
-// meridio_failure=$(echo "$failure" | grep -oP '(?<=Meridio version: ).*?(?=\/)' | sort | uniq -c | awk '{ printf "%s 0 %s\n", $2, $1 }')
-// meridio=$(echo "$meridio_success\n$meridio_failure" | awk '{ success[$1] += $2 ; failure[$1] += $3 } END { for(elem in success) print elem, success[elem], failure[elem] }' )
-// formatted=$(echo "$meridio" | awk '{ printf "%s (✅ %s / ❌ %s)\n", $1, $2, $3  }' | sed ':a;N;$!ba;s/\n/ | /g')
-// echo "$formatted"
