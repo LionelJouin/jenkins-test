@@ -39,20 +39,31 @@ node {
             ])
             sh 'git show'
         }
-        stage('Environment') {
-            currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch"
-
-            echo "make -s -C docs/demo/scripts/kind/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family"
-            echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-a --set ipFamily=dualstack'
-            echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-b --set vlan.id=200 --set ipFamily=dualstack'
-            echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-a --set default.trench.name=trench-a'
-            echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-b --set default.trench.name=trench-b'
-        }
         timeout(60) {
+            stage('Environment') {
+                currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch"
+
+                try {
+                    echo "make -s -C docs/demo/scripts/kind/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family"
+                    echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-a --set ipFamily=dualstack'
+                    echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-b --set vlan.id=200 --set ipFamily=dualstack'
+                    echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-a --set default.trench.name=trench-a'
+                    echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-b --set default.trench.name=trench-b'
+                    echo 'sleep 10'
+                    echo 'kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=5m'
+                } catch (Exception e) {
+                    Error('Error creating the environment').call()
+                }
+            }
             stage('E2E') {
-                echo "Meridio version: $meridio_version"
-                echo "TAPA version: $tapa_version"
-                echo "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/kind-helm/$ip_family/config.txt | tr '\\n' ' ')\""
+                try {
+                    echo "Meridio version: $meridio_version"
+                    echo "TAPA version: $tapa_version"
+                    echo "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/kind-helm/$ip_family/config.txt | tr '\\n' ' ')\""
+                } catch (Exception e) {
+                    unstable 'E2E Tests failed'
+                    currentBuild.result = 'FAILURE'
+                }
             }
         }
         stage('Cleanup') {
@@ -139,17 +150,25 @@ def Report() {
     return {
         def jenkins_url = ''
 
-        def success = sh(script: """
-        data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,999\\}&pretty=true")
-        success=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"SUCCESS\") | [.description] | @tsv' | grep -v \"^\$\")
-        echo \$success
-        """, returnStdout: true).trim()
+        def success = ''
+        try {
+            success = sh(script: """
+            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,2\\}&pretty=true")
+            success=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"SUCCESS\") | [.description] | @tsv' | grep -v \"^\$\")
+            echo \$success
+            """, returnStdout: true).trim()
+        } catch (Exception e) {
+        }
 
-        def failure = sh(script: """
-        data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,999\\}&pretty=true")
-        failure=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"FAILURE\") | [.description] | @tsv' | grep -v \"^\$\")
-        echo \$failure
-        """, returnStdout: true).trim()
+        def failure = ''
+        try {
+            failure = sh(script: """
+            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,2\\}&pretty=true")
+            failure=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"FAILURE\") | [.description] | @tsv' | grep -v \"^\$\")
+            echo \$failure
+            """, returnStdout: true).trim()
+        } catch (Exception e) {
+        }
 
         ReportMeridio(success, failure).call()
         ReportTAPA(success, failure).call()
@@ -163,7 +182,7 @@ def ReportMeridio(success, failure) {
     return {
         def meridio_success = sh(script: "echo \"$success\" | grep -oP '(?<=Meridio version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s %s 0\\n\", \$2, \$1 }'", returnStdout: true).trim()
         def meridio_failure = sh(script: "echo \"$failure\" | grep -oP '(?<=Meridio version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s 0 %s\\n\", \$2, \$1 }'", returnStdout: true).trim()
-        def meridio = sh(script: "echo \"$meridio_success\\n$meridio_failure\" | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
+        def meridio = sh(script: "echo \"$meridio_success\\n$meridio_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$meridio\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "Meridio: $formatted"
         def meridio_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-meridio', subject: 'Meridio', color: '#0B1F67', status: "$formatted")
@@ -174,7 +193,7 @@ def ReportTAPA(success, failure) {
     return {
         def tapa_success = sh(script: "echo \"$success\" | grep -oP '(?<=TAPA version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s %s 0\\n\", \$2, \$1 }'", returnStdout: true).trim()
         def tapa_failure = sh(script: "echo \"$failure\" | grep -oP '(?<=TAPA version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s 0 %s\\n\", \$2, \$1 }'", returnStdout: true).trim()
-        def tapa = sh(script: "echo \"$tapa_success\\n$tapa_failure\" | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
+        def tapa = sh(script: "echo \"$tapa_success\\n$tapa_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$tapa\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "TAPA: $formatted"
         def tapa_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-tapa', subject: 'TAPA', color: '#0B1F67', status: "$formatted")
@@ -185,7 +204,7 @@ def ReportNSM(success, failure) {
     return {
         def nsm_success = sh(script: "echo \"$success\" | grep -oP '(?<=NSM version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s %s 0\\n\", \$2, \$1 }'", returnStdout: true).trim()
         def nsm_failure = sh(script: "echo \"$failure\" | grep -oP '(?<=NSM version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s 0 %s\\n\", \$2, \$1 }'", returnStdout: true).trim()
-        def nsm = sh(script: "echo \"$nsm_success\\n$nsm_failure\" | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
+        def nsm = sh(script: "echo \"$nsm_success\\n$nsm_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$nsm\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "NSM: $formatted"
         def nsm_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-nsm', subject: 'NSM', color: '#0B1F67', status: "$formatted")
@@ -196,7 +215,7 @@ def ReportIPFamily(success, failure) {
     return {
         def ip_family_success = sh(script: "echo \"$success\" | grep -oP '(?<=IP Family: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s %s 0\\n\", \$2, \$1 }'", returnStdout: true).trim()
         def ip_family_failure = sh(script: "echo \"$failure\" | grep -oP '(?<=IP Family: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s 0 %s\\n\", \$2, \$1 }'", returnStdout: true).trim()
-        def ip_family = sh(script: "echo \"$ip_family_success\\n$ip_family_failure\" | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
+        def ip_family = sh(script: "echo \"$ip_family_success\\n$ip_family_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$ip_family\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "IP Family: $formatted"
         def ip_family_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-ip-family', subject: 'IP Family', color: '#0B1F67', status: "$formatted")
@@ -207,7 +226,7 @@ def ReportKubernetes(success, failure) {
     return {
         def kubernetes_success = sh(script: "echo \"$success\" | grep -oP '(?<=Kubernetes version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s %s 0\\n\", \$2, \$1 }'", returnStdout: true).trim()
         def kubernetes_failure = sh(script: "echo \"$failure\" | grep -oP '(?<=Kubernetes version: ).*?(?=\\/)' | sort | uniq -c | awk '{ printf \"%s 0 %s\\n\", \$2, \$1 }'", returnStdout: true).trim()
-        def kubernetes = sh(script: "echo \"$kubernetes_success\\n$kubernetes_failure\" | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
+        def kubernetes = sh(script: "echo \"$kubernetes_success\\n$kubernetes_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$kubernetes\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "Kubernetes: $formatted"
         def kubernetes_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-kubernetes', subject: 'Kubernetes', color: '#0B1F67', status: "$formatted")
@@ -224,7 +243,18 @@ def Error(e) {
 
 // Cleanup directory
 def Cleanup() {
+    ExecSh("echo 'make -s -C docs/demo/scripts/kind/ clean'").call()
     cleanWs()
+}
+
+// Execute command
+def ExecSh(command) {
+    return {
+        sh """
+            . \${HOME}/.profile
+            ${command}
+        """
+    }
 }
 
 // data=$(curl -s -L "http://JENKINS_URL/job/meridio-e2e-test-kind/api/json?tree=allBuilds\[status,timestamp,id,result,description\]&pretty=true")
