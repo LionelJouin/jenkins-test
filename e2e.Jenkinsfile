@@ -14,6 +14,10 @@ node {
         def kubernetes_version = params.KUBERNETES_VERSION
         def nsm_version = params.NSM_VERSION
         def ip_family = params.IP_FAMILY
+        def number_of_workers = params.NUMBER_OF_WORKERS
+        def environment_name = params.ENVIRONMENT_NAME
+
+        def seed = params.SEED
 
         stage('Debug') {
             sh 'ls'
@@ -41,51 +45,56 @@ node {
         }
         timeout(60) {
             stage('Environment') {
-                currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch"
+                currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch / Seed: $seed"
 
                 try {
-                    echo "make -s -C docs/demo/scripts/kind/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family"
-                    echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-a --set ipFamily=dualstack'
-                    echo 'helm install deployments/helm/ --generate-name --create-namespace --namespace red --set trench.name=trench-b --set vlan.id=200 --set ipFamily=dualstack'
-                    echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-a --set default.trench.name=trench-a'
-                    echo 'helm install examples/target/helm/ --generate-name --create-namespace --namespace red --set applicationName=target-b --set default.trench.name=trench-b'
-                    echo 'sleep 10'
-                    echo 'kubectl wait --for=condition=Ready pods --all --all-namespaces --timeout=5m'
+                    echo "make -s -C test/e2e/environment/$environment_name/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family KUBERNETES_WORKERS=$number_of_workers"
+                    def random = sh(script: 'shuf -i 1-8 -n1', returnStdout: true).trim()
+                    if (random == '2') {
+                        sh 'sdfsf'
+                    }
                 } catch (Exception e) {
-                    Error('Error creating the environment').call()
-                }
-            }
-            stage('E2E') {
-                try {
-                    echo "Meridio version: $meridio_version"
-                    echo "TAPA version: $tapa_version"
-                    echo "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/kind-helm/$ip_family/config.txt | tr '\\n' ' ')\""
-                } catch (Exception e) {
-                    unstable 'E2E Tests failed'
+                    unstable 'Environment setup failed'
                     currentBuild.result = 'FAILURE'
                 }
             }
+            stage('E2E') {
+                if (currentBuild.result != 'FAILURE') {
+                    try {
+                        echo "Meridio version: $meridio_version"
+                        echo "TAPA version: $tapa_version"
+                        echo "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/$environment_name/$ip_family/config.txt | tr '\\n' ' ')\" E2E_SEED=$seed"
+                        def random = sh(script: 'shuf -i 1-8 -n1', returnStdout: true).trim()
+                        if (random == '2') {
+                            sh 'sdfsf'
+                        }
+                    } catch (Exception e) {
+                        unstable 'E2E Tests failed'
+                        currentBuild.result = 'FAILURE'
+                    }
+                } else {
+                    Utils.markStageSkippedForConditional('E2E')
+                }
+            }
+        }
+        stage('Report') {
+            try {
+                Report().call()
+            } catch (Exception e) {
+                unstable 'Failed to create the report'
+                currentBuild.result = 'FAILURE'
+            }
+        }
+        stage('Next') {
+            Next(next, number_of_workers, environment_name).call()
         }
         stage('Cleanup') {
             Cleanup()
         }
-        stage('Debug') {
-            def random = sh(script: 'shuf -i 1-8 -n1', returnStdout: true).trim()
-            if (random == '2') {
-                currentBuild.result = 'FAILURE'
-            }
-            sh "echo $random"
-        }
-        stage('Report') {
-            Report().call()
-        }
-        stage('Next') {
-            Next(next).call()
-        }
     }
 }
 
-def Next(next) {
+def Next(next, number_of_workers, environment_name) {
     if (next == 'true') {
         return {
             def meridio_version = GetMeridioVersion()
@@ -93,14 +102,18 @@ def Next(next) {
             def nsm_version = GetNSMVersion()
             def kubernetes_version = GetKubernetesVersion()
             def ip_family = GetIPFamily()
-            echo "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version"
+            def seed = GetSeed()
+            echo "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Seed: $seed"
             build job: 'meridio-e2e-test-kind', parameters: [
                 string(name: 'NEXT', value: 'true'),
                 string(name: 'MERIDIO_VERSION', value: "$meridio_version"),
                 string(name: 'TAPA_VERSION', value: "$tapa_version"),
                 string(name: 'KUBERNETES_VERSION', value: "$kubernetes_version"),
                 string(name: 'NSM_VERSION', value: "$nsm_version"),
-                string(name: 'IP_FAMILY', value: "$ip_family")
+                string(name: 'IP_FAMILY', value: "$ip_family"),
+                string(name: 'NUMBER_OF_WORKERS', value: "$number_of_workers"),
+                string(name: 'ENVIRONMENT_NAME', value: "$environment_name"),
+                string(name: 'SEED', value: "$seed")
             ], wait: false
         }
     } else {
@@ -145,6 +158,10 @@ def GetIPFamily() {
     return sh(script: "cat test/e2e/environment/kind-helm/test-scope.yaml | yq '.IP-Family[$index_of_ip_family]'", returnStdout: true).trim()
 }
 
+def GetSeed() {
+    return sh(script: 'shuf -i 1-2147483647 -n1', returnStdout: true).trim()
+}
+
 // http://JENKINS_URL/job/meridio-e2e-test-kind/api/json?tree=allBuilds[status,timestamp,id,result,description]{0,9}&pretty=true
 def Report() {
     return {
@@ -153,7 +170,7 @@ def Report() {
         def success = ''
         try {
             success = sh(script: """
-            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,2\\}&pretty=true")
+            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,200\\}&pretty=true")
             success=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"SUCCESS\") | [.description] | @tsv' | grep -v \"^\$\")
             echo \$success
             """, returnStdout: true).trim()
@@ -163,7 +180,7 @@ def Report() {
         def failure = ''
         try {
             failure = sh(script: """
-            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,2\\}&pretty=true")
+            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,200\\}&pretty=true")
             failure=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"FAILURE\") | [.description] | @tsv' | grep -v \"^\$\")
             echo \$failure
             """, returnStdout: true).trim()
