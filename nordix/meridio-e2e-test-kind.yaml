@@ -81,6 +81,18 @@
           name: IP_FAMILY
           default: 'dualstack'
           description: IP Family
+      - string:
+          name: NUMBER_OF_WORKERS
+          default: "2"
+          description: Number of Kubernetes Workers
+      - string:
+          name: ENVIRONMENT_NAME
+          default: "kind-helm"
+          description: Name of the environment (under test/e2e/environment directory in Meridio)
+      - string:
+          name: SEED
+          default: "1"
+          description: Order in which the tests are running
 
     dsl: 
       !include-raw-escape: e2e.Jenkinsfile
