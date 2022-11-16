@@ -14,6 +14,7 @@ sudo apt-get install jenkins
 # GitHub Pull Request Builder
 # blue ocean
 # Mask Passwords
+# Embeddable Build Status
 
 sudo apt-get install -y git build-essential software-properties-common tmux vim iproute2 tcpdump iptables net-tools iputils-ping ipvsadm netcat wget ethtool nftables htop
 

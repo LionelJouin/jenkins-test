@@ -1,6 +1,21 @@
+/*
+Copyright (c) 2022 Nordix Foundation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
 
-node('nordix-nsm-build-ubuntu1804') {
+node() {
     build_number = env.BUILD_NUMBER
     workspace = env.WORKSPACE
     ws("${workspace}/${build_number}") {
@@ -36,8 +51,9 @@ node('nordix-nsm-build-ubuntu1804') {
             stage('Environment') {
                 currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch / Seed: $seed"
 
+                def command = "make -s -C test/e2e/environment/$environment_name/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family KUBERNETES_WORKERS=$number_of_workers"
                 try {
-                    ExecSh("make -s -C test/e2e/environment/$environment_name/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family KUBERNETES_WORKERS=$number_of_workers").call()
+                    ExecSh(command).call()
                 } catch (Exception e) {
                     unstable 'Environment setup failed'
                     currentBuild.result = 'FAILURE'
@@ -45,8 +61,9 @@ node('nordix-nsm-build-ubuntu1804') {
             }
             stage('E2E') {
                 if (currentBuild.result != 'FAILURE') {
+                    def command = "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/$environment_name/$ip_family/config.txt | tr '\\n' ' ')\" E2E_SEED=$seed"
                     try {
-                        ExecSh("make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/$environment_name/$ip_family/config.txt | tr '\\n' ' ')\" E2E_SEED=$seed").call()
+                        ExecSh(command).call()
                     } catch (Exception e) {
                         unstable 'E2E Tests failed'
                         currentBuild.result = 'FAILURE'
@@ -245,9 +262,13 @@ def Cleanup() {
 // Execute command
 def ExecSh(command) {
     return {
-        sh """
-            . \${HOME}/.profile
-            ${command}
-        """
+        if (env.DRY_RUN != 'true') {
+            sh """
+                . \${HOME}/.profile
+                ${command}
+            """
+        } else {
+            echo "${command}"
+        }
     }
 }
