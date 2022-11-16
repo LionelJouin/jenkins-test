@@ -54,7 +54,7 @@
           description: JJB configured PROJECT parameter to identify a Nordix GitHub project
       - string:
           name: IMAGE_NAMES
-          default: 'stateless-lb proxy tapa ipam nsp example-target frontend'
+          default: 'stateless-lb proxy tapa ipam nsp example-target frontend operator'
           description: Images to compile
       - string:
           name: IMAGE_VERSION

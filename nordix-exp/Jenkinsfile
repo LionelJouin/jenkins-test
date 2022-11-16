@@ -57,6 +57,9 @@ node() {
             }
             stage('Verify') {
                 Verify().call()
+                if (currentBuild.result == 'FAILURE') {
+                    Error('Failed at verification stage').call()
+                }
             }
             stage('Docker login') {
                 if (env.DRY_RUN != 'true') {
@@ -74,9 +77,16 @@ node() {
             }
             stage('Images') {
                 Images(image_names, version, build_steps, image_registry, local_version).call()
+                if (currentBuild.result == 'FAILURE') {
+                    Error('Failed to build image(s)').call()
+                }
             }
             stage('E2E') {
-                E2e(e2e_enabled).call()
+                if (e2e_enabled == 'true' && env.DRY_RUN != 'true') {
+                    E2e(e2e_enabled).call()
+                } else {
+                    Utils.markStageSkippedForConditional('E2E')
+                }
             }
         }
         stage('Cleanup') {
@@ -111,7 +121,8 @@ def UnitTests() {
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                Error(exception_message_exec + command).call()
+                unstable "${exception_message_exec} ${command}"
+                currentBuild.result = 'FAILURE'
             }
         }
     }
@@ -129,7 +140,8 @@ def Linter() {
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                Error(exception_message_exec + command).call()
+                unstable "${exception_message_exec} ${command}"
+                currentBuild.result = 'FAILURE'
             }
         }
     }
@@ -171,17 +183,6 @@ def GeneratedCode() {
         stage('Proto') {
             // TODO: protoc version could be different
             Utils.markStageSkippedForConditional('Proto')
-        // try {
-        //     sh 'make proto'
-        //     if (GetModifiedFiles() != '') {
-        //         throw new Exception(exception_message)
-        //     }
-        // } catch (Exception e) {
-        //     SetBuildStatus(failed, context, failure)
-        //     sh 'git diff'
-        //     sh 'git status -s'
-        //     Error(e).call()
-        // }
         }
         SetBuildStatus(completed, context, success)
     }
@@ -219,7 +220,8 @@ def Build(image, version, build_steps, registry, local_version) {
                 SetBuildStatus(completed_message, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed_message, context, failure)
-                Error(exception_message_exec + command).call()
+                unstable "${exception_message_exec} ${command}"
+                currentBuild.result = 'FAILURE'
             }
         }
     }
@@ -228,14 +230,8 @@ def Build(image, version, build_steps, registry, local_version) {
 // Run the E2e Tests
 // Currently skipped
 def E2e(e2e_enabled) {
-    if (e2e_enabled == 'true' && env.DRY_RUN != 'true') {
-        return {
-            echo 'make e2e' // todo
-        }
-    } else {
-        return {
-            Utils.markStageSkippedForConditional('E2E')
-        }
+    return {
+        echo 'make e2e' // todo
     }
 }
 

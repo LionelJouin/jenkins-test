@@ -57,9 +57,9 @@
           name: DEFAULT_BRANCH
           default: "master"
           description: default branch
-      - string:
+      - bool:
           name: NEXT
-          default: 'false'
+          default: false
           description: Does the job run has to call for a next run?
       - string:
           name: MERIDIO_VERSION
@@ -87,12 +87,20 @@
           description: Number of Kubernetes Workers
       - string:
           name: ENVIRONMENT_NAME
-          default: "kind-helm"
+          default: "kind-operator"
           description: Name of the environment (under test/e2e/environment directory in Meridio)
       - string:
           name: SEED
           default: "1"
           description: Order in which the tests are running
+      - string:
+          name: SKIP
+          default: ""
+          description: e2e tests to skip
+      - string:
+          name: FOCUS
+          default: ""
+          description: e2e tests to focus
       - bool:
           name: DRY_RUN
           default: false
