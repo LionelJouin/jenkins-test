@@ -63,8 +63,12 @@
           description: Recipients of the report
       - string:
           name: IMAGE_NAMES
-          default: 'stateless-lb proxy tapa ipam nsp frontend'
+          default: 'stateless-lb proxy tapa ipam nsp frontend operator'
           description: Images to compile
+      - bool:
+          name: DRY_RUN
+          default: false
+          description: Dry Run
 
     triggers:
       - timed: '@midnight'

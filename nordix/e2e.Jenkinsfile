@@ -1,6 +1,21 @@
+/*
+Copyright (c) 2022 Nordix Foundation
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
 
-node('nordix-nsm-build-ubuntu1804') {
+node('nordix-nsm-build-ubuntu2204') {
     build_number = env.BUILD_NUMBER
     workspace = env.WORKSPACE
     ws("${workspace}/${build_number}") {
@@ -16,6 +31,8 @@ node('nordix-nsm-build-ubuntu1804') {
         def ip_family = params.IP_FAMILY
         def number_of_workers = params.NUMBER_OF_WORKERS
         def environment_name = params.ENVIRONMENT_NAME
+        def focus = params.FOCUS
+        def skip = params.SKIP
 
         def seed = params.SEED
 
@@ -36,8 +53,9 @@ node('nordix-nsm-build-ubuntu1804') {
             stage('Environment') {
                 currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch / Seed: $seed"
 
+                def command = "make -s -C test/e2e/environment/$environment_name/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version IP_FAMILY=$ip_family KUBERNETES_WORKERS=$number_of_workers MERIDIO_VERSION=$meridio_version TAPA_VERSION=$tapa_version"
                 try {
-                    ExecSh("make -s -C test/e2e/environment/$environment_name/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version KUBERNETES_IP_FAMILY=$ip_family KUBERNETES_WORKERS=$number_of_workers").call()
+                    ExecSh(command).call()
                 } catch (Exception e) {
                     unstable 'Environment setup failed'
                     currentBuild.result = 'FAILURE'
@@ -45,8 +63,10 @@ node('nordix-nsm-build-ubuntu1804') {
             }
             stage('E2E') {
                 if (currentBuild.result != 'FAILURE') {
+                    def command = "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/$environment_name/$ip_family/config.txt | tr '\\n' ' ')\" E2E_SEED=$seed E2E_FOCUS=\"$focus\" E2E_SKIP=\"$skip\""
                     try {
-                        ExecSh("make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/$environment_name/$ip_family/config.txt | tr '\\n' ' ')\" E2E_SEED=$seed").call()
+                        ExecSh(command).call()
+                        currentBuild.result = 'SUCCESS'
                     } catch (Exception e) {
                         unstable 'E2E Tests failed'
                         currentBuild.result = 'FAILURE'
@@ -64,7 +84,11 @@ node('nordix-nsm-build-ubuntu1804') {
             }
         }
         stage('Next') {
-            Next(next, number_of_workers, environment_name).call()
+            if (next == true && currentBuild.result != 'ABORTED') {
+                Next(next, number_of_workers, environment_name, focus, skip, current_branch).call()
+            } else {
+                Utils.markStageSkippedForConditional('Next')
+            }
         }
         stage('Cleanup') {
             Cleanup()
@@ -72,17 +96,16 @@ node('nordix-nsm-build-ubuntu1804') {
     }
 }
 
-def Next(next, number_of_workers, environment_name) {
-    if (next == 'true') {
-        return {
-            def meridio_version = GetMeridioVersion()
-            def tapa_version = GetTAPAVersion()
-            def nsm_version = GetNSMVersion()
-            def kubernetes_version = GetKubernetesVersion()
-            def ip_family = GetIPFamily()
-            def seed = GetSeed()
-            echo "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Seed: $seed"
-            build job: 'meridio-e2e-test-kind', parameters: [
+def Next(next, number_of_workers, environment_name, focus, skip, current_branch) {
+    return {
+        def meridio_version = GetMeridioVersion()
+        def tapa_version = GetTAPAVersion()
+        def nsm_version = GetNSMVersion()
+        def kubernetes_version = GetKubernetesVersion()
+        def ip_family = GetIPFamily()
+        def seed = GetSeed()
+        echo "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Seed: $seed"
+        build job: 'meridio-e2e-test-kind', parameters: [
                 string(name: 'NEXT', value: 'true'),
                 string(name: 'MERIDIO_VERSION', value: "$meridio_version"),
                 string(name: 'TAPA_VERSION', value: "$tapa_version"),
@@ -91,13 +114,12 @@ def Next(next, number_of_workers, environment_name) {
                 string(name: 'IP_FAMILY', value: "$ip_family"),
                 string(name: 'NUMBER_OF_WORKERS', value: "$number_of_workers"),
                 string(name: 'ENVIRONMENT_NAME', value: "$environment_name"),
-                string(name: 'SEED', value: "$seed")
+                string(name: 'SEED', value: "$seed"),
+                string(name: 'FOCUS', value: "$focus"),
+                string(name: 'SKIP', value: "$skip"),
+                string(name: 'CURRENT_BRANCH', value: "$current_branch"),
+                string(name: 'DRY_RUN', value: env.DRY_RUN)
             ], wait: false
-        }
-    } else {
-        return {
-            Utils.markStageSkippedForConditional('Next')
-        }
     }
 }
 
@@ -148,7 +170,7 @@ def Report() {
         def success = ''
         try {
             success = sh(script: """
-            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,999\\}&pretty=true")
+            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,1000\\}&pretty=true")
             success=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"SUCCESS\") | [.description] | @tsv' | grep -v \"^\$\")
             echo \$success
             """, returnStdout: true).trim()
@@ -158,7 +180,7 @@ def Report() {
         def failure = ''
         try {
             failure = sh(script: """
-            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,999\\}&pretty=true")
+            data=\$(curl -s -L "http://$jenkins_url/job/meridio-e2e-test-kind/api/json?tree=allBuilds\\[status,timestamp,id,result,description\\]\\{0,1000\\}&pretty=true")
             failure=\$(echo \"\$data\" | jq -r '.allBuilds[] | select(.result == \"FAILURE\") | [.description] | @tsv' | grep -v \"^\$\")
             echo \$failure
             """, returnStdout: true).trim()
@@ -170,6 +192,11 @@ def Report() {
         ReportNSM(success, failure).call()
         ReportIPFamily(success, failure).call()
         ReportKubernetes(success, failure).call()
+
+        try {
+            archiveArtifacts artifacts: '_output/*', followSymlinks: false
+        } catch (Exception e) {
+        }
     }
 }
 
@@ -180,7 +207,7 @@ def ReportMeridio(success, failure) {
         def meridio = sh(script: "echo \"$meridio_success\\n$meridio_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$meridio\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "Meridio: $formatted"
-        def meridio_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-meridio', subject: 'Meridio', color: '#0B1F67', status: "$formatted")
+        badge('meridio-e2e-kind-meridio', 'Meridio', formatted)
     }
 }
 
@@ -191,7 +218,7 @@ def ReportTAPA(success, failure) {
         def tapa = sh(script: "echo \"$tapa_success\\n$tapa_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$tapa\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "TAPA: $formatted"
-        def tapa_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-tapa', subject: 'TAPA', color: '#0B1F67', status: "$formatted")
+        badge('meridio-e2e-kind-tapa', 'TAPA', formatted)
     }
 }
 
@@ -202,7 +229,7 @@ def ReportNSM(success, failure) {
         def nsm = sh(script: "echo \"$nsm_success\\n$nsm_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$nsm\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "NSM: $formatted"
-        def nsm_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-nsm', subject: 'NSM', color: '#0B1F67', status: "$formatted")
+        badge('meridio-e2e-kind-nsm', 'NSM', formatted)
     }
 }
 
@@ -213,7 +240,7 @@ def ReportIPFamily(success, failure) {
         def ip_family = sh(script: "echo \"$ip_family_success\\n$ip_family_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$ip_family\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "IP Family: $formatted"
-        def ip_family_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-ip-family', subject: 'IP Family', color: '#0B1F67', status: "$formatted")
+        badge('meridio-e2e-kind-ip-family', 'IP Family', formatted)
     }
 }
 
@@ -224,8 +251,21 @@ def ReportKubernetes(success, failure) {
         def kubernetes = sh(script: "echo \"$kubernetes_success\\n$kubernetes_failure\" | grep -v '^\$' | awk '{ success[\$1] += \$2 ; failure[\$1] += \$3 } END { for(elem in success) print elem, success[elem], failure[elem] }' | sort -k1", returnStdout: true).trim()
         def formatted = sh(script: "echo \"$kubernetes\" | awk '{ printf \"%s (✅ %s / ❌ %s)\\n\", \$1, \$2, \$3  }' | sed ':a;N;\$!ba;s/\\n/ | /g'", returnStdout: true).trim()
         echo "Kubernetes: $formatted"
-        def kubernetes_badge = addEmbeddableBadgeConfiguration(id: 'meridio-e2e-kind-kubernetes', subject: 'Kubernetes', color: '#0B1F67', status: "$formatted")
+        badge('meridio-e2e-kind-kubernetes', 'Kubernetes', formatted)
     }
+}
+
+def badge(id, subject, message) {
+    addEmbeddableBadgeConfiguration(id: "${id}", subject: "${subject}", color: '#0B1F67', status: "$message")
+    sh """
+    mkdir -p _output
+    echo '{' >> _output/${id}.json
+    echo '"schemaVersion": 1,' >> _output/${id}.json
+    echo '"label": "${subject}",' >> _output/${id}.json
+    echo '"message": "${message}",' >> _output/${id}.json
+    echo '"color": "#0B1F67"' >> _output/${id}.json
+    echo '}' >> _output/${id}.json
+    """
 }
 
 // Raise error in Jenkins job
@@ -238,16 +278,21 @@ def Error(e) {
 
 // Cleanup directory and kind cluster
 def Cleanup() {
-    ExecSh('make -s -C docs/demo/scripts/kind/ clean').call()
+    def command = 'make -s -C docs/demo/scripts/kind/ clean'
+    ExecSh(command).call()
     cleanWs()
 }
 
 // Execute command
 def ExecSh(command) {
     return {
-        sh """
-            . \${HOME}/.profile
-            ${command}
-        """
+        if (env.DRY_RUN != 'true') {
+            sh """
+                . \${HOME}/.profile
+                ${command}
+            """
+        } else {
+            echo "${command}"
+        }
     }
 }

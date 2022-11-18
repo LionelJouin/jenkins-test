@@ -1,5 +1,21 @@
+/*
+Copyright (c) 2022 Nordix Foundation
 
-node('nordix-nsm-build-ubuntu1804') {
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
+
+node('nordix-nsm-build-ubuntu2204') {
     build_number = env.BUILD_NUMBER
     workspace = env.WORKSPACE
     ws("${workspace}/${build_number}") {
@@ -44,18 +60,19 @@ node('nordix-nsm-build-ubuntu1804') {
                 ExecSh(command).call()
             }
             stage('Report') {
-                archiveArtifacts artifacts: '_output/*', followSymlinks: false
+                if (env.DRY_RUN != 'true') {
+                    archiveArtifacts artifacts: '_output/*', followSymlinks: false
 
-                def number_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
-                def list_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
-                def number_of_high_severity_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
-                def list_of_high_severity_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
-                def git_describe =  sh(script: 'git describe --dirty --tags', returnStdout: true).trim()
-                def git_rev =  sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-                def report =  sh(script: 'cat _output/report.txt', returnStdout: true).trim()
+                    def number_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
+                    def list_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
+                    def number_of_high_severity_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
+                    def list_of_high_severity_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | grep -i "high" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()
+                    def git_describe =  sh(script: 'git describe --dirty --tags', returnStdout: true).trim()
+                    def git_rev =  sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    def report =  sh(script: 'cat _output/report.txt', returnStdout: true).trim()
 
-                def subject = "Meridio - Security Scan - ${number_of_high_severity_vulnerabilities} high severity vulnerabilities detected"
-                def body = """
+                    def subject = "Meridio - Security Scan - ${number_of_high_severity_vulnerabilities} high severity vulnerabilities detected"
+                    def body = """
 Run: ${RUN_DISPLAY_URL}
 git describe --dirty --tags: ${git_describe}
 git rev-parse HEAD: ${git_rev}
@@ -71,9 +88,12 @@ List of vulnerabilities with high severity: ${list_of_high_severity_vulnerabilit
 report:
 ${report}
 """
-                emailext body: "${body}", subject: "${subject}", to: "${email_recipients}"
+                    emailext body: "${body}", subject: "${subject}", to: "${email_recipients}"
 
-                vulnerabilityBadge.setStatus("${number_of_vulnerabilities}")
+                    vulnerabilityBadge.setStatus("${number_of_vulnerabilities}")
+                } else {
+                    Utils.markStageSkippedForConditional('Report')
+                }
             }
         }
         stage('Cleanup') {
@@ -90,9 +110,13 @@ def Cleanup() {
 // Execute command
 def ExecSh(command) {
     return {
-        sh """
-            . \${HOME}/.profile
-            ${command}
-        """
+        if (env.DRY_RUN != 'true') {
+            sh """
+                . \${HOME}/.profile
+                ${command}
+            """
+        } else {
+            echo "${command}"
+        }
     }
 }

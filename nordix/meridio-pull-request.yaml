@@ -54,7 +54,7 @@
           description: JJB configured PROJECT parameter to identify a Nordix GitHub project
       - string:
           name: IMAGE_NAMES
-          default: 'stateless-lb proxy tapa ipam nsp example-target frontend'
+          default: 'stateless-lb proxy tapa ipam nsp example-target frontend operator'
           description: Images to compile
       - string:
           name: IMAGE_VERSION
@@ -84,6 +84,10 @@
           name: IMAGE_REGISTRY
           default: 'registry.nordix.org/cloud-native/meridio'
           description: Meridio image regsitry
+      - bool:
+          name: DRY_RUN
+          default: false
+          description: Dry Run
 
     # https://opendev.org/jjb/jenkins-job-builder/src/commit/be422af6bb5edc32886a98d78340051f71244c41/jenkins_jobs/modules/triggers.py#L1235
     triggers:
