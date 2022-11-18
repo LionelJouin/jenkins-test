@@ -61,7 +61,10 @@ node('nordix-nsm-build-ubuntu2204') {
             }
             stage('Report') {
                 if (env.DRY_RUN != 'true') {
-                    archiveArtifacts artifacts: '_output/*', followSymlinks: false
+                    try {
+                        archiveArtifacts artifacts: '_output/**/*.*', followSymlinks: false
+                    } catch (Exception e) {
+                    }
 
                     def number_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | wc -l', returnStdout: true).trim()
                     def list_of_vulnerabilities =  sh(script: 'cat _output/list.txt | grep -v "^$" | awk \'{print $1}\' | sort | uniq | sed \':a;N;$!ba;s/\\n/ ; /g\'', returnStdout: true).trim()

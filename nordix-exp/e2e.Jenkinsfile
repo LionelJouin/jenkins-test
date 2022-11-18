@@ -49,7 +49,7 @@ node() {
             ])
             sh 'git show'
         }
-        timeout(60) {
+        timeout(120) {
             stage('Environment') {
                 currentBuild.description = "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Current Branch: $current_branch / Seed: $seed"
 
@@ -194,7 +194,7 @@ def Report() {
         ReportKubernetes(success, failure).call()
 
         try {
-            archiveArtifacts artifacts: '_output/*', followSymlinks: false
+            archiveArtifacts artifacts: '_output/**/*.*', followSymlinks: false
         } catch (Exception e) {
         }
     }
