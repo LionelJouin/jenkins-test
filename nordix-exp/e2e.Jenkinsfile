@@ -56,17 +56,21 @@ node() {
                 def command = "make -s -C test/e2e/environment/$environment_name/ KUBERNETES_VERSION=$kubernetes_version NSM_VERSION=$nsm_version IP_FAMILY=$ip_family KUBERNETES_WORKERS=$number_of_workers MERIDIO_VERSION=$meridio_version TAPA_VERSION=$tapa_version"
                 try {
                     ExecSh(command).call()
+                } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+                    currentBuild.result = 'ABORTED'
                 } catch (Exception e) {
                     unstable 'Environment setup failed'
                     currentBuild.result = 'FAILURE'
                 }
             }
             stage('E2E') {
-                if (currentBuild.result != 'FAILURE') {
+                if (currentBuild.result != 'FAILURE' && currentBuild.result != 'ABORTED') {
                     def command = "make e2e E2E_PARAMETERS=\"\$(cat ./test/e2e/environment/$environment_name/$ip_family/config.txt | tr '\\n' ' ')\" E2E_SEED=$seed E2E_FOCUS=\"$focus\" E2E_SKIP=\"$skip\""
                     try {
                         ExecSh(command).call()
                         currentBuild.result = 'SUCCESS'
+                    } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+                        currentBuild.result = 'ABORTED'
                     } catch (Exception e) {
                         unstable 'E2E Tests failed'
                         currentBuild.result = 'FAILURE'
@@ -79,6 +83,8 @@ node() {
         stage('Report') {
             try {
                 Report().call()
+            } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+                currentBuild.result = 'ABORTED'
             } catch (Exception e) {
                 unstable 'Failed to create the report'
             }
@@ -98,11 +104,11 @@ node() {
 
 def Next(next, number_of_workers, environment_name, focus, skip, current_branch) {
     return {
-        def meridio_version = GetMeridioVersion()
-        def tapa_version = GetTAPAVersion()
-        def nsm_version = GetNSMVersion()
-        def kubernetes_version = GetKubernetesVersion()
-        def ip_family = GetIPFamily()
+        def meridio_version = GetMeridioVersion(environment_name)
+        def tapa_version = GetTAPAVersion(environment_name)
+        def nsm_version = GetNSMVersion(environment_name)
+        def kubernetes_version = GetKubernetesVersion(environment_name)
+        def ip_family = GetIPFamily(environment_name)
         def seed = GetSeed()
         echo "Meridio version: $meridio_version / TAPA version: $tapa_version / NSM version: $nsm_version / IP Family: $ip_family / Kubernetes version: $kubernetes_version / Seed: $seed"
         build job: 'meridio-e2e-test-kind', parameters: [
@@ -123,39 +129,39 @@ def Next(next, number_of_workers, environment_name, focus, skip, current_branch)
     }
 }
 
-def GetMeridioVersion() {
-    def number_of_versions = sh(script: 'cat test/e2e/environment/kind-helm/test-scope.yaml | yq ".Meridio[]" | wc -l', returnStdout: true).trim()
+def GetMeridioVersion(environment_name) {
+    def number_of_versions = sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.Meridio[]' | wc -l", returnStdout: true).trim()
     def index_of_version_temp = sh(script: "shuf -i 1-$number_of_versions -n1", returnStdout: true).trim()
     def index_of_version = sh(script: "expr $index_of_version_temp - 1 || true", returnStdout: true).trim()
-    return sh(script: "cat test/e2e/environment/kind-helm/test-scope.yaml | yq '.Meridio[$index_of_version]'", returnStdout: true).trim()
+    return sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.Meridio[$index_of_version]'", returnStdout: true).trim()
 }
 
-def GetTAPAVersion() {
-    def number_of_versions = sh(script: 'cat test/e2e/environment/kind-helm/test-scope.yaml | yq ".TAPA[]" | wc -l', returnStdout: true).trim()
+def GetTAPAVersion(environment_name) {
+    def number_of_versions = sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.TAPA[]' | wc -l", returnStdout: true).trim()
     def index_of_version_temp = sh(script: "shuf -i 1-$number_of_versions -n1", returnStdout: true).trim()
     def index_of_version = sh(script: "expr $index_of_version_temp - 1 || true", returnStdout: true).trim()
-    return sh(script: "cat test/e2e/environment/kind-helm/test-scope.yaml | yq '.TAPA[$index_of_version]'", returnStdout: true).trim()
+    return sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.TAPA[$index_of_version]'", returnStdout: true).trim()
 }
 
-def GetNSMVersion() {
-    def number_of_versions = sh(script: 'cat test/e2e/environment/kind-helm/test-scope.yaml | yq ".NSM[]" | wc -l', returnStdout: true).trim()
+def GetNSMVersion(environment_name) {
+    def number_of_versions = sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.NSM[]' | wc -l", returnStdout: true).trim()
     def index_of_version_temp = sh(script: "shuf -i 1-$number_of_versions -n1", returnStdout: true).trim()
     def index_of_version = sh(script: "expr $index_of_version_temp - 1 || true", returnStdout: true).trim()
-    return sh(script: "cat test/e2e/environment/kind-helm/test-scope.yaml | yq '.NSM[$index_of_version]'", returnStdout: true).trim()
+    return sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.NSM[$index_of_version]'", returnStdout: true).trim()
 }
 
-def GetKubernetesVersion() {
-    def number_of_versions = sh(script: 'cat test/e2e/environment/kind-helm/test-scope.yaml | yq ".Kubernetes[]" | wc -l', returnStdout: true).trim()
+def GetKubernetesVersion(environment_name) {
+    def number_of_versions = sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.Kubernetes[]' | wc -l", returnStdout: true).trim()
     def index_of_version_temp = sh(script: "shuf -i 1-$number_of_versions -n1", returnStdout: true).trim()
     def index_of_version = sh(script: "expr $index_of_version_temp - 1 || true", returnStdout: true).trim()
-    return sh(script: "cat test/e2e/environment/kind-helm/test-scope.yaml | yq '.Kubernetes[$index_of_version]'", returnStdout: true).trim()
+    return sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.Kubernetes[$index_of_version]'", returnStdout: true).trim()
 }
 
-def GetIPFamily() {
-    def number_of_ip_family = sh(script: 'cat test/e2e/environment/kind-helm/test-scope.yaml | yq ".IP-Family[]" | wc -l', returnStdout: true).trim()
+def GetIPFamily(environment_name) {
+    def number_of_ip_family = sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.IP-Family[]' | wc -l", returnStdout: true).trim()
     def index_of_ip_family_temp = sh(script: "shuf -i 1-$number_of_ip_family -n1", returnStdout: true).trim()
     def index_of_ip_family = sh(script: "expr $index_of_ip_family_temp - 1 || true", returnStdout: true).trim()
-    return sh(script: "cat test/e2e/environment/kind-helm/test-scope.yaml | yq '.IP-Family[$index_of_ip_family]'", returnStdout: true).trim()
+    return sh(script: "cat test/e2e/environment/$environment_name/test-scope.yaml | yq '.IP-Family[$index_of_ip_family]'", returnStdout: true).trim()
 }
 
 def GetSeed() {
