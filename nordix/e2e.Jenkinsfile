@@ -82,7 +82,7 @@ node('nordix-nsm-build-ubuntu2204') {
         }
         stage('Report') {
             try {
-                Report().call()
+                Report(build_number).call()
             } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
                 currentBuild.result = 'ABORTED'
             } catch (Exception e) {
@@ -169,7 +169,7 @@ def GetSeed() {
 }
 
 // http://JENKINS_URL/job/meridio-e2e-test-kind/api/json?tree=allBuilds[status,timestamp,id,result,description]{0,9}&pretty=true
-def Report() {
+def Report(id) {
     return {
         def jenkins_url = 'jenkins.nordix.org'
 
@@ -199,8 +199,15 @@ def Report() {
         ReportIPFamily(success, failure).call()
         ReportKubernetes(success, failure).call()
 
+        sh 'printenv > _output/parameters.txt'
+        sh "echo 'RESULT=$currentBuild.result' >> _output/parameters.txt"
+
         try {
             archiveArtifacts artifacts: '_output/**/*.*', followSymlinks: false
+            sh "tar -czvf ${id}.tar.gz -C _output ."
+            withCredentials([string(credentialsId: 'nsm-nordix-artifactory-api-key', variable: 'API_KEY')]) {
+                sh "curl -H 'X-JFrog-Art-Api:${API_KEY}' -T ${id}.tar.gz 'http://artifactory.nordix.org/artifactory/cloud-native/meridio/e2e-test-reports/${id}.tar.gz'"
+            }
         } catch (Exception e) {
         }
     }

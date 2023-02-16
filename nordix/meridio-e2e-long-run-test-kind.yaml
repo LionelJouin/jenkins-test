@@ -30,8 +30,6 @@
     project-type: pipeline
     disabled: '{obj:disabled}'
 
-    concurrent: false
-
     properties:
       - github:
           url: https://github.com/Nordix/Meridio-Operator

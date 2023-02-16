@@ -30,11 +30,15 @@
     project-type: pipeline
     disabled: '{obj:disabled}'
 
-    concurrent: false
-
     properties:
       - github:
           url: https://github.com/Nordix/Meridio-Operator
+      - build-discarder:
+          days-to-keep: 60
+          num-to-keep: 2000
+          artifact-days-to-keep: 60
+          artifact-num-to-keep: 2000
+
 
     parameters:
       - string:
