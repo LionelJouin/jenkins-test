@@ -77,7 +77,6 @@ def E2EList(number_of_runs, interval, environment_name, ip_family, focus, skip) 
         def stages = [:]
         def list = sh(script: "seq -w 1 $number_of_runs | paste -sd ' ' -", returnStdout: true).trim().split(' ')
         def previous = '0'
-        env.E2E_PREVIOUSLY_EXECUTED = previous
         for (i in list) {
             stages.put("$i", E2E(i, previous, interval, environment_name, ip_family, focus, skip))
             previous = i
@@ -89,25 +88,20 @@ def E2EList(number_of_runs, interval, environment_name, ip_family, focus, skip) 
 // Run e2e
 def E2E(id, previous_id, interval, environment_name, ip_family, focus, skip) {
     return {
-        stage('Wait for previous') {
-            waitUntil(initialRecurrencePeriod: 15000, quiet: true) {
-                return env.E2E_PREVIOUSLY_EXECUTED == previous_id
-            }
-        }
-        if (previous_id != '0') {
-            stage("Wait $interval seconds") {
-                sh "sleep $interval"
-            }
+        def wait = sh(script: "echo `expr $interval \\* $previous_id`", returnStdout: true).trim()
+        stage("Wait $wait seconds") {
+            sh "sleep $wait"
         }
         stage('E2E') {
             def command = "make e2e E2E_ENVIRONMENT=\"$environment_name\" E2E_IP_FAMILY=\"$ip_family\" E2E_FOCUS=\"$focus\" E2E_SKIP=\"$skip\""
-            try {
-                ExecSh(command).call()
-            } catch (Exception e) {
-                unstable 'Failing e2e'
+            timeout(time: interval, unit: 'SECONDS') {
+                try {
+                    ExecSh(command).call()
+                } catch (Exception e) {
+                    unstable 'Failing e2e'
+                }
             }
         }
-        env.E2E_PREVIOUSLY_EXECUTED = id
     }
 }
 
