@@ -34,6 +34,8 @@ node() {
         def image_names = params.IMAGE_NAMES.split(' ')
         def version = params.IMAGE_VERSION
         def e2e_enabled = params.E2E_ENABLED
+        def helm_chart_upload = params.HELM_CHART_UPLOAD
+        def security_scan_enabled = params.SECURITY_SCAN_ENABLED
         def git_project = params.GIT_PROJECT
         def current_branch = params.CURRENT_BRANCH
         def default_branch = params.DEFAULT_BRANCH
@@ -55,12 +57,7 @@ node() {
                 ])
                 sh 'git show'
             }
-            stage('Verify') {
-                Verify().call()
-                if (currentBuild.result == 'FAILURE') {
-                    Error('Failed at verification stage').call()
-                }
-            }
+            Verify().call()
             stage('Docker login') {
                 if (env.DRY_RUN != 'true') {
                     withCredentials([usernamePassword(credentialsId: 'nordix-cicd-harbor-credentials', passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
@@ -69,7 +66,7 @@ node() {
                     '''
                     }
                 } else {
-                    Utils.markStageSkippedForConditional('Docker login')
+                    echo 'Docker login'
                 }
             }
             stage('Base Image') {
@@ -81,9 +78,19 @@ node() {
                     Error('Failed to build image(s)').call()
                 }
             }
+            stage('Helm Chart') {
+                HelmChart(helm_chart_upload).call()
+            }
+            stage('Security Scan') {
+                if (security_scan_enabled == true) {
+                    SecurityScan(current_branch, version).call()
+                } else {
+                    Utils.markStageSkippedForConditional('Security Scan')
+                }
+            }
             stage('E2E') {
-                if (e2e_enabled == 'true' && env.DRY_RUN != 'true') {
-                    E2e(e2e_enabled).call()
+                if (e2e_enabled == true) {
+                    E2e(current_branch, version).call()
                 } else {
                     Utils.markStageSkippedForConditional('E2E')
                 }
@@ -95,17 +102,12 @@ node() {
     }
 }
 
-// Static analysis: Runs the GeneratedCode function and then UnitTests and Linter in parallel
+// Verify the Generated code, UnitTests and Linter
 def Verify() {
     return {
         GeneratedCode().call() // cannot generate code and run the linter and tests at the same time
-        // Linter().call()
-        // UnitTests().call()
-        def stages = [:]
-        stages.put('Unit Tests', UnitTests())
-        stages.put('Linter', Linter())
-        // stages.put('Generated code verification', GeneratedCode())
-        parallel(stages)
+        Linter().call()
+        UnitTests().call()
     }
 }
 
@@ -121,8 +123,7 @@ def UnitTests() {
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                unstable "${exception_message_exec} ${command}"
-                currentBuild.result = 'FAILURE'
+                Error("${exception_message_exec} ${command}").call()
             }
         }
     }
@@ -140,8 +141,7 @@ def Linter() {
                 SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
-                unstable "${exception_message_exec} ${command}"
-                currentBuild.result = 'FAILURE'
+                Error("${exception_message_exec} ${command}").call()
             }
         }
     }
@@ -155,36 +155,20 @@ def Linter() {
 def GeneratedCode() {
     return {
         def context = 'Generated code verification'
-        SetBuildStatus(in_progress, context, pending)
-        stage('go mod tidy') {
-            def command = 'go mod tidy'
-            try {
-                ExecSh(command).call()
-                if (GetModifiedFiles() != '') {
-                    throw new Exception(exception_message_code_generation)
-                }
-            } catch (Exception e) {
-                SetBuildStatus(failed, context, failure)
-                Error(exception_message_exec + command).call()
-            }
-        }
-        stage('go generate ./...') {
+        stage('Generated code verification') {
             def command = 'make generate'
             try {
+                SetBuildStatus(in_progress, context, pending)
                 ExecSh(command).call()
                 if (GetModifiedFiles() != '') {
                     throw new Exception(exception_message_code_generation)
                 }
+                SetBuildStatus(completed, context, success)
             } catch (Exception e) {
                 SetBuildStatus(failed, context, failure)
                 Error(exception_message_exec + command).call()
             }
         }
-        stage('Proto') {
-            // TODO: protoc version could be different
-            Utils.markStageSkippedForConditional('Proto')
-        }
-        SetBuildStatus(completed, context, success)
     }
 }
 
@@ -227,11 +211,64 @@ def Build(image, version, build_steps, registry, local_version) {
     }
 }
 
+// Generate and upload the helm chart
+def HelmChart(helm_chart_upload) {
+    return {
+        parallel(
+            'Helm Chart': {
+                stage('Generate Helm Chart') {
+                    def context = 'Generate Helm Chart'
+                    def command = 'make generate-helm-chart'
+                    try {
+                        SetBuildStatus(in_progress, context, pending)
+                        ExecSh(command).call()
+                        SetBuildStatus(completed, context, success)
+                    } catch (Exception e) {
+                        SetBuildStatus(failed, context, failure)
+                        Error("${exception_message_exec} ${command}").call()
+                    }
+                }
+                stage('Upload Helm Chart') {
+                    if (helm_chart_upload == true) {
+                        withCredentials([string(credentialsId: 'nsm-nordix-artifactory-api-key', variable: 'API_KEY')]) {
+                            ExecSh("""
+                                charts=\$(cd _output/helm/ && ls *.tgz)
+                                for chart in \$charts
+                                do
+                                    curl -H 'X-JFrog-Art-Api:${API_KEY}' -T _output/helm/\$chart \"http://130.61.143.188:8081/artifactory/cloud-native/meridio/\$chart\"
+                                done
+                            """).call()
+                        }
+                    } else {
+                        Utils.markStageSkippedForConditional('Upload Helm Chart')
+                    }
+                }
+            }
+        )
+    }
+}
+
+// Run the security scan job
+def SecurityScan(current_branch, version) {
+    return {
+        build job: 'meridio-periodic-security-scan', parameters: [
+            string(name: 'IMAGE_VERSION', value: "$version"),
+            string(name: 'CURRENT_BRANCH', value: "$current_branch"),
+            string(name: 'DRY_RUN', value: env.DRY_RUN)
+        ], wait: true
+    }
+}
+
 // Run the E2e Tests
 // Currently skipped
-def E2e(e2e_enabled) {
+def E2e(current_branch, version) {
     return {
-        echo 'make e2e' // todo
+        build job: 'meridio-e2e-test-kind', parameters: [
+            string(name: 'MERIDIO_VERSION', value: "$version"),
+            string(name: 'TAPA_VERSION', value: "$version"),
+            string(name: 'CURRENT_BRANCH', value: "$current_branch"),
+            string(name: 'DRY_RUN', value: env.DRY_RUN)
+        ], wait: true
     }
 }
 
