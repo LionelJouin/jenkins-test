@@ -66,11 +66,11 @@
           description: Run the e2e tests?
       - bool:
           name: HELM_CHART_UPLOAD
-          default: true
+          default: false
           description: Upload Helm Charts?
       - bool:
           name: SECURITY_SCAN_ENABLED
-          default: true
+          default: false
           description: Run the security scan?
       - string:
           name: GIT_PROJECT

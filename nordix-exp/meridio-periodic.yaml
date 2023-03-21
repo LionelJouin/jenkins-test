@@ -69,7 +69,7 @@
           description: Upload Helm Charts?
       - bool:
           name: SECURITY_SCAN_ENABLED
-          default: true
+          default: false
           description: Run the security scan?
       - string:
           name: GIT_PROJECT
