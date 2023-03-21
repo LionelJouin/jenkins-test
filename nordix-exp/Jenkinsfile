@@ -79,7 +79,7 @@ node() {
                 }
             }
             stage('Helm Chart') {
-                HelmChart(helm_chart_upload).call()
+                HelmChart(helm_chart_upload, version).call()
             }
             stage('Security Scan') {
                 if (security_scan_enabled == true) {
@@ -156,7 +156,7 @@ def GeneratedCode() {
     return {
         def context = 'Generated code verification'
         stage('Generated code verification') {
-            def command = 'make generate'
+            def command = 'make go-generate manifests generate-controller'
             try {
                 SetBuildStatus(in_progress, context, pending)
                 ExecSh(command).call()
@@ -212,13 +212,13 @@ def Build(image, version, build_steps, registry, local_version) {
 }
 
 // Generate and upload the helm chart
-def HelmChart(helm_chart_upload) {
+def HelmChart(helm_chart_upload, version) {
     return {
         parallel(
             'Helm Chart': {
                 stage('Generate Helm Chart') {
                     def context = 'Generate Helm Chart'
-                    def command = 'make generate-helm-chart'
+                    def command = "make generate-helm-chart VERSION=${version}"
                     try {
                         SetBuildStatus(in_progress, context, pending)
                         ExecSh(command).call()

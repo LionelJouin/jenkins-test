@@ -60,10 +60,18 @@
           name: IMAGE_VERSION
           default: 'latest'
           description: Version of the images
-      - string:
+      - bool:
           name: E2E_ENABLED
-          default: "false"
-          description: Is E2E Tests enabled?
+          default: false
+          description: Run the e2e tests?
+      - bool:
+          name: HELM_CHART_UPLOAD
+          default: true
+          description: Upload Helm Charts?
+      - bool:
+          name: SECURITY_SCAN_ENABLED
+          default: true
+          description: Run the security scan?
       - string:
           name: GIT_PROJECT
           default: "https://github.com/Nordix/Meridio.git"

@@ -98,7 +98,7 @@
       - string:
           name: INTERVAL
           default: "7200"
-          description: Interval between each e2e test run (in seconds)
+          description: Interval between each e2e test run (in seconds). This also defines the timeout of the e2e test runs.
       - bool:
           name: DRY_RUN
           default: false
