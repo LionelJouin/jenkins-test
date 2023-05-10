@@ -65,6 +65,9 @@ node() {
         stage('E2E List') {
             E2EList(number_of_runs, interval, environment_name, ip_family, focus, skip).call()
         }
+        stage('Report') {
+            Report(environment_name, ip_family).call()
+        }
         stage('Cleanup') {
             Cleanup()
         }
@@ -101,6 +104,27 @@ def E2E(id, previous_id, interval, environment_name, ip_family, focus, skip) {
                     unstable 'Failing e2e'
                 }
             }
+            Archive(id).call()
+        }
+    }
+}
+
+def Report(environment_name, ip_family) {
+    return {
+        // Collect logs
+        def command = "cd ./test/e2e ; ./environment/$environment_name/$ip_family/test.sh on_failure"
+        ExecSh(command).call()
+        Archive('Report').call()
+    }
+}
+
+def Archive(id) {
+    return {
+        try {
+            sh "tar -czvf ${id}.tar.gz -C _output ."
+            archiveArtifacts artifacts: "${id}.tar.gz", followSymlinks: false
+            sh 'rm -rf _output ; mkdir -p _output'
+        } catch (Exception e) {
         }
     }
 }
